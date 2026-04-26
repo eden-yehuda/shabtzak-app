@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
@@ -7,12 +7,16 @@ import Link from 'next/link'
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter()
+  const [checking, setChecking] = useState(true)
 
   useEffect(() => {
     return onAuthStateChanged(auth, user => {
       if (!user) router.replace('/admin/login')
+      else setChecking(false)
     })
   }, [router])
+
+  if (checking) return null
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans" dir="rtl">

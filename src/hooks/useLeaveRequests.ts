@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { onSnapshot, query, where } from 'firebase/firestore'
 import { leaveRequestsRef } from '@/lib/firestore'
 import type { LeaveRequest } from '@/types'
@@ -27,11 +27,13 @@ export function useLeaveRequests(soldierId?: string): LeaveRequest[] {
 
 export function useLeaveCountByDate(): Record<string, number> {
   const all = useLeaveRequests()
-  const counts: Record<string, number> = {}
-  for (const r of all) {
-    if (r.status !== 'rejected') {
-      counts[r.date] = (counts[r.date] || 0) + 1
+  return useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const r of all) {
+      if (r.status !== 'rejected') {
+        counts[r.date] = (counts[r.date] || 0) + 1
+      }
     }
-  }
-  return counts
+    return counts
+  }, [all])
 }
