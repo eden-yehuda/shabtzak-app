@@ -6,6 +6,7 @@ const TASK_COLORS: Record<string, string> = {
   'פטרול': 'border-yellow-500',
   'מטבח': 'border-purple-500',
   'לוגיסטיקה': 'border-green-500',
+  'ניקיון': 'border-cyan-500',
 }
 
 interface Props {
@@ -29,7 +30,7 @@ export default function TaskList({ tasks, assignments, soldierId }: Props) {
     <div className="space-y-3">
       {myTasks.map(task => {
         const done = task.end_datetime < new Date()
-        const color = TASK_COLORS[task.task_name] ?? 'border-slate-400'
+        const color = TASK_COLORS[task.task_type] ?? TASK_COLORS[task.task_name] ?? 'border-slate-400'
         return (
           <div key={task.id} className={`bg-white rounded-xl p-4 border-r-4 ${color} shadow-sm ${done ? 'opacity-60' : ''}`}>
             <div className="text-xs text-slate-400">

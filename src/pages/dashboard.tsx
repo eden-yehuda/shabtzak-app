@@ -48,7 +48,7 @@ export default function Dashboard() {
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-xl font-bold text-navy">שלום, {soldierName}</h1>
         <button
-          onClick={() => { localStorage.clear(); router.push('/') }}
+          onClick={() => { localStorage.removeItem('soldierId'); localStorage.removeItem('soldierName'); router.push('/') }}
           className="text-sm text-slate-400 hover:text-slate-600"
         >
           החלף
