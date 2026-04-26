@@ -12,7 +12,7 @@ export function hoursGap(endOfFirst: Date, startOfSecond: Date): number {
 }
 
 export function formatHebrewDate(date: Date): string {
-  return `${date.getDate()}/${date.getMonth() + 1}`
+  return `${date.getUTCDate()}/${date.getUTCMonth() + 1}`
 }
 
 export function formatTime(date: Date): string {

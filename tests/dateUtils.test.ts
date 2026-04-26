@@ -31,6 +31,6 @@ describe('hoursGap', () => {
 
 describe('formatHebrewDate', () => {
   it('formats date as DD/MM', () => {
-    expect(formatHebrewDate(new Date('2026-04-27'))).toBe('27/4')
+    expect(formatHebrewDate(new Date('2026-04-27T12:00:00Z'))).toBe('27/4')
   })
 })

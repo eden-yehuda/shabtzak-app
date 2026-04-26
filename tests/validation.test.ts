@@ -50,6 +50,21 @@ describe('validateSchedule', () => {
     expect(errors.some(e => e.type === 'error' && e.task_id === 't1')).toBe(true)
   })
 
+  it('flags workload imbalance when gap exceeds 4 hours', () => {
+    const tasks: Task[] = [
+      makeTask('t1', '2026-04-27T08:00', '2026-04-27T16:00'), // 8h
+      makeTask('t2', '2026-04-27T08:00', '2026-04-27T10:00'), // 2h
+    ]
+    const assignments: Assignment[] = [
+      { id: 'a1', task_id: 't1', soldier_id: 's1' },
+      { id: 'a2', task_id: 't1', soldier_id: 's3' },
+      { id: 'a3', task_id: 't2', soldier_id: 's2' },
+      { id: 'a4', task_id: 't2', soldier_id: 's4' },
+    ]
+    const errors = validateSchedule(tasks, assignments)
+    expect(errors.some(e => e.type === 'warning' && e.message.includes('שוויונית'))).toBe(true)
+  })
+
   it('returns no errors for a valid schedule', () => {
     const tasks: Task[] = [
       makeTask('t1', '2026-04-27T08:00', '2026-04-27T12:00'),
