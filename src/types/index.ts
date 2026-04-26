@@ -42,7 +42,7 @@ export interface Assignment {
 export interface LeaveRequest {
   id: string
   soldier_id: string
-  date: string
+  date: string          // 'YYYY-MM-DD'
   status: 'pending' | 'approved' | 'rejected'
   created_at: Date
   reviewed_by?: string

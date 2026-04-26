@@ -25,8 +25,16 @@ export const createTask = (data: Omit<Task, 'id'>) =>
     start_datetime: Timestamp.fromDate(data.start_datetime),
     end_datetime: Timestamp.fromDate(data.end_datetime),
   })
-export const updateTask = (id: string, data: Partial<Task>) =>
-  updateDoc(doc(db, 'tasks', id), data)
+export const updateTask = (id: string, data: Partial<Task>) => {
+  const payload: Record<string, unknown> = { ...data }
+  if (data.start_datetime instanceof Date) {
+    payload.start_datetime = Timestamp.fromDate(data.start_datetime)
+  }
+  if (data.end_datetime instanceof Date) {
+    payload.end_datetime = Timestamp.fromDate(data.end_datetime)
+  }
+  return updateDoc(doc(db, 'tasks', id), payload)
+}
 export const deleteTask = (id: string) =>
   deleteDoc(doc(db, 'tasks', id))
 
