@@ -21,10 +21,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-slate-100 font-sans" dir="rtl">
       <header className="bg-navy text-white px-4 py-3 flex gap-6 items-center shadow">
-        <span className="font-bold text-lg">מנהל שבצ"ק</span>
+        <span className="font-bold text-lg">{'מנהל שבצ"ק'}</span>
         <nav className="flex gap-4 text-sm">
           <Link href="/admin/dashboard" className="hover:underline">דשבורד</Link>
-          <Link href="/admin/schedule/new" className="hover:underline">שבצ"ק חדש</Link>
+          <Link href="/admin/schedule/new" className="hover:underline">{'שבצ"ק חדש'}</Link>
           <Link href="/admin/leave" className="hover:underline">יציאות</Link>
           <Link href="/admin/justice" className="hover:underline">טבלת צדק</Link>
         </nav>

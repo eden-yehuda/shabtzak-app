@@ -10,7 +10,7 @@ export default function Layout({ children, title = 'שבצ"ק' }: { children: Re
       </Head>
       <div className="min-h-screen bg-slate-50 font-sans" dir="rtl">
         <header className="bg-navy text-white px-4 py-3 flex justify-between items-center shadow">
-          <span className="font-bold text-lg">שבצ"ק מחלקתי</span>
+          <span className="font-bold text-lg">{'שבצ"ק מחלקתי'}</span>
         </header>
         <main className="max-w-2xl mx-auto px-4 py-6">{children}</main>
       </div>
