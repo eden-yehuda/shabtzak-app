@@ -2,6 +2,7 @@ import type { LeaveRequest, Soldier } from '@/types'
 import StatusBadge from '@/components/ui/StatusBadge'
 import { updateLeaveStatus } from '@/lib/firestore'
 import { useAuth } from '@/hooks/useAuth'
+import { useState } from 'react'
 import { formatHebrewDate } from '@/utils/dateUtils'
 
 interface Props {
@@ -12,14 +13,34 @@ interface Props {
 
 export default function LeaveTable({ requests, soldiers, leaveCountByDate }: Props) {
   const { uid } = useAuth()
+  const [loadingId, setLoadingId] = useState<string | null>(null)
 
   const sorted = [...requests].sort((a, b) => a.date.localeCompare(b.date))
 
   async function approve(id: string) {
-    if (uid) await updateLeaveStatus(id, 'approved', uid)
+    if (!uid || loadingId) return
+    setLoadingId(id)
+    try {
+      await updateLeaveStatus(id, 'approved', uid)
+    } catch (err) {
+      console.error('Failed to approve:', err)
+      alert('שגיאה באישור הבקשה. נסה שוב.')
+    } finally {
+      setLoadingId(null)
+    }
   }
+
   async function reject(id: string) {
-    if (uid) await updateLeaveStatus(id, 'rejected', uid)
+    if (!uid || loadingId) return
+    setLoadingId(id)
+    try {
+      await updateLeaveStatus(id, 'rejected', uid)
+    } catch (err) {
+      console.error('Failed to reject:', err)
+      alert('שגיאה בדחיית הבקשה. נסה שוב.')
+    } finally {
+      setLoadingId(null)
+    }
   }
 
   return (
@@ -48,8 +69,22 @@ export default function LeaveTable({ requests, soldiers, leaveCountByDate }: Pro
                 <td className="px-4 py-3">
                   {r.status === 'pending' && (
                     <div className="flex gap-2">
-                      <button type="button" onClick={() => approve(r.id)} className="text-green-600 hover:underline text-xs font-semibold">אשר</button>
-                      <button type="button" onClick={() => reject(r.id)} className="text-red-500 hover:underline text-xs font-semibold">דחה</button>
+                      <button
+                        type="button"
+                        onClick={() => approve(r.id)}
+                        disabled={!!loadingId}
+                        className="text-green-600 hover:underline text-xs font-semibold disabled:opacity-40"
+                      >
+                        {loadingId === r.id ? '...' : 'אשר'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => reject(r.id)}
+                        disabled={!!loadingId}
+                        className="text-red-500 hover:underline text-xs font-semibold disabled:opacity-40"
+                      >
+                        {loadingId === r.id ? '...' : 'דחה'}
+                      </button>
                     </div>
                   )}
                 </td>
