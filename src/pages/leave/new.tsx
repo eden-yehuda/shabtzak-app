@@ -36,8 +36,14 @@ export default function NewLeaveRequest() {
   async function submit() {
     if (!soldierId || selectedDates.length === 0) return
     setSubmitting(true)
-    await Promise.all(selectedDates.map(date => createLeaveRequest(soldierId, date)))
-    router.push('/dashboard')
+    try {
+      await Promise.all(selectedDates.map(date => createLeaveRequest(soldierId, date)))
+      router.push('/dashboard')
+    } catch (err) {
+      console.error('Failed to submit leave requests:', err)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (!soldierId) return null
