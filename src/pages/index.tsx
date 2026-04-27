@@ -1,5 +1,4 @@
 import { useEffect, useState, useMemo } from 'react'
-import Head from 'next/head'
 import Layout from '@/components/layout/Layout'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useScheduleTasks } from '@/hooks/useSchedule'
