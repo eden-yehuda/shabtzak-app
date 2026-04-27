@@ -42,7 +42,6 @@ export default function TaskCard({ task, assignments, soldiers, isSelected, onSe
       </div>
       <div className="flex flex-wrap gap-1">
         {assigned.map(s => {
-          const a = assignments.find(asn => asn.task_id === task.id && asn.soldier_id === s.id)
           return (
             <span key={s.id} className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full flex items-center gap-1">
               {s.full_name}
