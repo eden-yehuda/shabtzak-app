@@ -28,7 +28,7 @@ export default function TaskModal({ scheduleId, onClose }: Props) {
   }, [])
 
   async function save() {
-    if (!name || !startDate || !startTime || !endDate || !endTime) return
+    if (!name || !type || !startDate || !startTime || !endDate || !endTime) return
     setSaving(true)
     try {
       await createTask({
@@ -110,7 +110,7 @@ export default function TaskModal({ scheduleId, onClose }: Props) {
           <button
             type="button"
             onClick={save}
-            disabled={saving || !name || !startDate || !startTime || !endDate || !endTime}
+            disabled={saving || !name || !type || !startDate || !startTime || !endDate || !endTime}
             className="flex-1 bg-navy text-white rounded-xl py-2 font-semibold disabled:opacity-50"
           >
             {saving ? 'שומר...' : 'הוסף משימה'}

@@ -87,11 +87,16 @@ export default function NewSchedule() {
               onClick={runValidation}
               className="border border-yellow-400 text-yellow-700 rounded-xl px-4 py-2 text-sm font-semibold"
             >
-              {`בדוק שגיאות${showValidation ? ` (${validationErrors.length})` : ''}`}
+              {`⚠ בדוק שגיאות${showValidation ? ` (${validationErrors.length})` : ''}`}
             </button>
             <button
               type="button"
-              onClick={() => setConfirmPublish(true)}
+              onClick={() => {
+                const errors = validateSchedule(tasks, assignments)
+                setValidationErrors(errors)
+                setShowValidation(true)
+                setConfirmPublish(true)
+              }}
               className="bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-semibold"
             >
               {'פרסם'}
