@@ -1,0 +1,24 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Admins (authenticated users) can read and write everything
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Public read for core collections
+    match /soldiers/{id} { allow read: if true; }
+    match /schedules/{id} { allow read: if true; }
+    match /tasks/{id} { allow read: if true; }
+    match /assignments/{id} { allow read: if true; }
+    match /task_types/{id} { allow read: if true; }
+
+    // Soldiers can create leave requests (unauthenticated), but not update status
+    match /leave_requests/{id} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null;
+    }
+  }
+}
