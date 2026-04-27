@@ -11,6 +11,7 @@ import { useSoldiers } from '@/hooks/useSoldiers'
 import { useScheduleTasks } from '@/hooks/useSchedule'
 import { useAuth } from '@/hooks/useAuth'
 import { validateSchedule } from '@/utils/validation'
+import { exportToPDF, exportToExcel } from '@/utils/exportUtils'
 import { createSchedule } from '@/lib/firestore'
 import type { ValidationError } from '@/types'
 
@@ -103,6 +104,20 @@ export default function NewSchedule() {
               className="bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-semibold"
             >
               {'פרסם'}
+            </button>
+            <button
+              type="button"
+              onClick={() => exportToPDF(scheduleName)}
+              className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold"
+            >
+              PDF ↓
+            </button>
+            <button
+              type="button"
+              onClick={() => exportToExcel(tasks, assignments, soldiers, scheduleName)}
+              className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold"
+            >
+              Excel ↓
             </button>
           </div>
         </div>
