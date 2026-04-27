@@ -46,7 +46,12 @@ export default function NewSchedule() {
 
   async function publish() {
     if (!scheduleId) return
-    await updateDoc(doc(db, 'schedules', scheduleId), { status: 'published' })
+    try {
+      await updateDoc(doc(db, 'schedules', scheduleId), { status: 'published' })
+    } catch (err) {
+      console.error('publish failed', err)
+      alert('פרסום נכשל — נסה שוב')
+    }
     setConfirmPublish(false)
   }
 
@@ -92,9 +97,7 @@ export default function NewSchedule() {
             <button
               type="button"
               onClick={() => {
-                const errors = validateSchedule(tasks, assignments)
-                setValidationErrors(errors)
-                setShowValidation(true)
+                runValidation()
                 setConfirmPublish(true)
               }}
               className="bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-semibold"

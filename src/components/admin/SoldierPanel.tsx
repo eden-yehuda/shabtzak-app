@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { Soldier, Assignment, Task } from '@/types'
 import { createAssignment } from '@/lib/firestore'
 import { hoursGap } from '@/utils/dateUtils'
@@ -42,12 +43,19 @@ function getSoldierInfo(
 }
 
 export default function SoldierPanel({ soldiers, assignments, tasks, selectedTaskId }: Props) {
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
   async function assign(soldierId: string) {
-    if (!selectedTaskId) return
+    if (!selectedTaskId || isSubmitting) return
     const alreadyAssigned = assignments.some(
       a => a.task_id === selectedTaskId && a.soldier_id === soldierId
     )
-    if (!alreadyAssigned) await createAssignment(selectedTaskId, soldierId)
+    if (!alreadyAssigned) {
+      setIsSubmitting(true)
+      try { await createAssignment(selectedTaskId, soldierId) }
+      catch (err) { console.error('createAssignment failed', err) }
+      finally { setIsSubmitting(false) }
+    }
   }
 
   return (

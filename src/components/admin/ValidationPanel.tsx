@@ -12,13 +12,13 @@ export default function ValidationPanel({ errors }: { errors: ValidationError[] 
 
   return (
     <div className="space-y-2">
-      {errs.map((e, i) => (
-        <div key={i} className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex gap-2">
+      {errs.map((e) => (
+        <div key={`err-${e.soldier_id ?? ''}-${e.task_id ?? ''}-${e.message}`} className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex gap-2">
           <span>{'🔴'} {e.message}</span>
         </div>
       ))}
-      {warns.map((e, i) => (
-        <div key={i} className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 text-sm text-yellow-800 flex gap-2">
+      {warns.map((e) => (
+        <div key={`warn-${e.soldier_id ?? ''}-${e.task_id ?? ''}-${e.message}`} className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 text-sm text-yellow-800 flex gap-2">
           <span>{'🟡'} {e.message}</span>
         </div>
       ))}

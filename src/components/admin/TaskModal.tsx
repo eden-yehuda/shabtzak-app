@@ -22,9 +22,13 @@ export default function TaskModal({ scheduleId, onClose }: Props) {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    getDocs(taskTypesRef()).then(snap => {
-      setTaskTypes(snap.docs.map(d => ({ id: d.id, ...d.data() } as TaskType)))
-    })
+    let mounted = true
+    getDocs(taskTypesRef())
+      .then(snap => {
+        if (mounted) setTaskTypes(snap.docs.map(d => ({ id: d.id, ...d.data() } as TaskType)))
+      })
+      .catch(err => console.error('Failed to load task types', err))
+    return () => { mounted = false }
   }, [])
 
   async function save() {
@@ -34,7 +38,7 @@ export default function TaskModal({ scheduleId, onClose }: Props) {
       await createTask({
         schedule_id: scheduleId,
         task_name: name,
-        task_type: type || name,
+        task_type: type,
         difficulty,
         start_datetime: new Date(`${startDate}T${startTime}`),
         end_datetime: new Date(`${endDate}T${endTime}`),

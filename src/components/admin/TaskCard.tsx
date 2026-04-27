@@ -33,7 +33,10 @@ export default function TaskCard({ task, assignments, soldiers, isSelected, onSe
         </div>
         <button
           type="button"
-          onClick={e => { e.stopPropagation(); deleteTask(task.id) }}
+          onClick={async e => {
+            e.stopPropagation()
+            try { await deleteTask(task.id) } catch (err) { console.error('deleteTask failed', err) }
+          }}
           className="text-slate-300 hover:text-red-400 text-lg leading-none"
         >×</button>
       </div>
@@ -45,9 +48,12 @@ export default function TaskCard({ task, assignments, soldiers, isSelected, onSe
               {s.full_name}
               <button
                 type="button"
-                onClick={e => {
+                onClick={async e => {
                   e.stopPropagation()
-                  if (a) deleteAssignment(a.id)
+                  const a = assignments.find(asn => asn.task_id === task.id && asn.soldier_id === s.id)
+                  if (a) {
+                    try { await deleteAssignment(a.id) } catch (err) { console.error('deleteAssignment failed', err) }
+                  }
                 }}
                 className="text-blue-400 hover:text-blue-700 leading-none"
               >×</button>
