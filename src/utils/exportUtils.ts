@@ -28,8 +28,8 @@ export function exportToExcel(
         'משימה': task?.task_name ?? '',
         'סוג': task?.task_type ?? '',
         'קושי': task?.difficulty === 'hard' ? 'קשה' : 'קל',
-        'התחלה': task?.start_datetime.toLocaleString('he-IL') ?? '',
-        'סיום': task?.end_datetime.toLocaleString('he-IL') ?? '',
+        'התחלה': task?.start_datetime?.toLocaleString('he-IL') ?? '',
+        'סיום': task?.end_datetime?.toLocaleString('he-IL') ?? '',
       }
     })
 
