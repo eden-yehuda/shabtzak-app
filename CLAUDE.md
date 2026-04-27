@@ -18,4 +18,4 @@ git push
 - **Stack:** Next.js 14, TypeScript, Tailwind CSS, Firebase Firestore
 - **כיוון:** RTL, עברית בלבד
 - **GitHub:** https://github.com/eden-yehuda/shabtzak-app
-- **Netlify:** מחובר ל-GitHub, מתעדכן אוטומטית בכל push
+- **Netlify:** https://shivzuk.netlify.app — מחובר ל-GitHub, מתעדכן אוטומטית בכל push
