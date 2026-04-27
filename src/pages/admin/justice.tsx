@@ -7,7 +7,7 @@ import { tasksRef, assignmentsRef, taskTypesRef } from '@/lib/firestore'
 import type { Task, Assignment, TaskType } from '@/types'
 
 export default function Justice() {
-  const soldiers = useSoldiers()
+  const soldiers = useSoldiers(false)
   const [tasks, setTasks] = useState<Task[]>([])
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [taskTypes, setTaskTypes] = useState<TaskType[]>([])

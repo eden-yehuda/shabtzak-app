@@ -1,5 +1,5 @@
 import type { Soldier, Task, Assignment, TaskType } from '@/types'
-import { hoursGap } from '@/utils/dateUtils'
+import { taskDurationHours } from '@/utils/dateUtils'
 
 interface Props {
   soldiers: Soldier[]
@@ -21,7 +21,7 @@ export default function JusticeTable({ soldiers, tasks, assignments, taskTypes }
     let totalHours = 0
 
     for (const task of myTasks) {
-      const h = hoursGap(task.start_datetime, task.end_datetime)
+      const h = taskDurationHours(task.start_datetime, task.end_datetime)
       hoursByType[task.task_type] = (hoursByType[task.task_type] || 0) + h
       totalHours += h
     }
@@ -54,7 +54,7 @@ export default function JusticeTable({ soldiers, tasks, assignments, taskTypes }
                 <td className="px-4 py-3 font-medium">{soldier.full_name}</td>
                 {typeNames.map(t => (
                   <td key={t} className="px-4 py-3 text-center text-slate-600">
-                    {hoursByType[t] ? `${hoursByType[t].toFixed(1)}ש׳` : '—'}
+                    {hoursByType[t] != null ? `${hoursByType[t].toFixed(1)}ש׳` : '—'}
                   </td>
                 ))}
                 <td className="px-4 py-3 text-center font-bold">{totalHours.toFixed(1)}ש׳</td>

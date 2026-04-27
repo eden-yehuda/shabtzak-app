@@ -11,6 +11,11 @@ export function hoursGap(endOfFirst: Date, startOfSecond: Date): number {
   return (startOfSecond.getTime() - endOfFirst.getTime()) / (1000 * 60 * 60)
 }
 
+/** Returns the duration of a task in hours */
+export function taskDurationHours(start: Date, end: Date): number {
+  return (end.getTime() - start.getTime()) / (1000 * 60 * 60)
+}
+
 export function formatHebrewDate(date: Date): string {
   return `${date.getUTCDate()}/${date.getUTCMonth() + 1}`
 }
