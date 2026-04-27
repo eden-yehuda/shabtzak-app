@@ -25,7 +25,11 @@ export function useScheduleTasks(scheduleId: string | null) {
   }, [scheduleId])
 
   useEffect(() => {
-    if (!scheduleId || tasks.length === 0) return
+    if (!scheduleId) return
+    if (tasks.length === 0) {
+      setAssignments([])
+      return () => {}
+    }
     const taskIds = tasks.map(t => t.id)
     // Firestore 'in' query max 30 items — chunk if needed
     const chunks: string[][] = []

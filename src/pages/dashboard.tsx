@@ -62,6 +62,12 @@ export default function Dashboard() {
         <TaskList tasks={tasks} assignments={assignments} soldierId={soldierId} />
       </section>
 
+      <div className="mt-4 mb-6 text-center">
+        <Link href="/schedule" className="text-sm text-navy underline">
+          {'צפה בשבצ"ק המחלקתי המלא'}
+        </Link>
+      </div>
+
       <section className="mb-6">
         <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3">בקשות יציאה</h2>
         <LeaveList requests={leaveRequests} />
