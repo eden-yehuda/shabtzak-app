@@ -98,7 +98,7 @@ export default function HomePage() {
               onChange={e => { setSearch(e.target.value); setShowDropdown(true) }}
               onFocus={() => setShowDropdown(true)}
               placeholder="חפש שם..."
-              className="w-full border border-slate-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-navy"
+              className="w-full border border-slate-300 rounded-xl px-4 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:border-navy"
             />
             {showDropdown && filteredSoldiers.length > 0 && (
               <div className="absolute top-full right-0 left-0 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-52 overflow-y-auto mt-1">
