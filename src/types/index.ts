@@ -55,6 +55,7 @@ export interface LeaveRequest {
   date: string // 'YYYY-MM-DD'
   status: 'pending' | 'approved' | 'rejected'
   is_final: boolean
+  note?: string
   created_at: Date
   reviewed_by?: string
 }

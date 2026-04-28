@@ -4,7 +4,7 @@ import { useSoldiers } from '@/hooks/useSoldiers'
 import { useLeaveRequests } from '@/hooks/useLeaveRequests'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
 import { addDoc, deleteDoc, doc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore'
-import { leaveRequestsRef, updateLeaveStatus } from '@/lib/firestore'
+import { leaveRequestsRef } from '@/lib/firestore'
 import { db } from '@/lib/firebase'
 import type { Soldier } from '@/types'
 
@@ -13,6 +13,17 @@ interface SurveySettings {
   from: string
   to: string
   max_days: number
+}
+
+function daysInRange(from: string, to: string): string[] {
+  const days: string[] = []
+  const cur = new Date(from + 'T12:00:00')
+  const end = new Date(to + 'T12:00:00')
+  while (cur <= end) {
+    days.push(cur.toISOString().split('T')[0])
+    cur.setDate(cur.getDate() + 1)
+  }
+  return days
 }
 
 function next14Days(): string[] {
@@ -27,17 +38,15 @@ function next14Days(): string[] {
 }
 
 function dayLabel(dateStr: string) {
-  const d = new Date(dateStr)
-  const days = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
-  return `${days[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
+  const d = new Date(dateStr + 'T12:00:00')
+  const dayNames = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
+  return `${dayNames[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
 }
 
 export default function AdminLeavePage() {
   const soldiers = useSoldiers(false)
-  const pending = useLeaveRequests()
+  const allRequests = useLeaveRequests()
   const finalLeave = useFinalLeave()
-  const dates = useMemo(() => next14Days(), [])
-  const [tab, setTab] = useState<'requests' | 'final'>('final')
   const [survey, setSurvey] = useState<SurveySettings | null>(null)
   const [draftFrom, setDraftFrom] = useState('')
   const [draftTo, setDraftTo] = useState('')
@@ -59,15 +68,30 @@ export default function AdminLeavePage() {
     await setDoc(doc(db, 'settings', 'leave_survey'), { is_open: false, from: survey?.from ?? '', to: survey?.to ?? '', max_days: survey?.max_days ?? 3 })
   }
 
+  // Dates to display: survey range if open, otherwise next 14 days
+  const dates = useMemo(() => {
+    if (survey?.is_open && survey.from && survey.to) return daysInRange(survey.from, survey.to)
+    return next14Days()
+  }, [survey])
+
   const sorted = useMemo(() =>
     [...soldiers].filter(s => s.is_active).sort((a, b) => a.full_name.localeCompare(b.full_name, 'he')),
     [soldiers]
   )
 
+  // Non-final pending/rejected requests submitted by soldiers
+  const soldierRequests = useMemo(() => allRequests.filter(r => !r.is_final), [allRequests])
+
   async function toggleFinal(soldier: Soldier, date: string) {
-    const existing = finalLeave.find(r => r.soldier_id === soldier.id && r.date === date)
-    if (existing) {
-      await deleteDoc(doc(db, 'leave_requests', existing.id))
+    const approved = finalLeave.find(r => r.soldier_id === soldier.id && r.date === date)
+    if (approved) {
+      await deleteDoc(doc(db, 'leave_requests', approved.id))
+      return
+    }
+    // If there's a pending request, approve it in-place
+    const pending = soldierRequests.find(r => r.soldier_id === soldier.id && r.date === date && r.status === 'pending')
+    if (pending) {
+      await updateDoc(doc(db, 'leave_requests', pending.id), { is_final: true, status: 'approved' })
     } else {
       await addDoc(leaveRequestsRef(), {
         soldier_id: soldier.id,
@@ -79,26 +103,19 @@ export default function AdminLeavePage() {
     }
   }
 
-  const requests = pending.filter(r => !r.is_final)
-
-  async function approveRequest(requestId: string) {
-    await updateDoc(doc(db, 'leave_requests', requestId), {
-      is_final: true,
-      status: 'approved',
-    })
-  }
-
-  async function rejectRequest(requestId: string) {
-    await updateLeaveStatus(requestId, 'rejected', 'admin')
-  }
-
   function countFinal(date: string) {
     return finalLeave.filter(r => r.date === date && r.status === 'approved').length
+  }
+
+  function countPending(date: string) {
+    return soldierRequests.filter(r => r.date === date && r.status === 'pending').length
   }
 
   function presentCount(date: string) {
     return soldiers.filter(s => s.is_active).length - countFinal(date)
   }
+
+  const totalPending = soldierRequests.filter(r => r.status === 'pending').length
 
   return (
     <AdminLayout>
@@ -122,37 +139,20 @@ export default function AdminLeavePage() {
             </div>
           ) : (
             <div className="flex gap-2 items-center flex-wrap">
-              <input
-                type="date"
-                value={draftFrom}
-                onChange={e => setDraftFrom(e.target.value)}
-                className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
-              />
+              <input type="date" value={draftFrom} onChange={e => setDraftFrom(e.target.value)}
+                className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
               <span className="text-slate-400 text-sm">עד</span>
-              <input
-                type="date"
-                value={draftTo}
-                onChange={e => setDraftTo(e.target.value)}
-                min={draftFrom}
-                className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
-              />
+              <input type="date" value={draftTo} onChange={e => setDraftTo(e.target.value)} min={draftFrom}
+                className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
               <div className="flex items-center gap-1.5">
                 <span className="text-slate-500 text-sm">מכסה:</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={30}
-                  value={draftMaxDays}
+                <input type="number" min={1} max={30} value={draftMaxDays}
                   onChange={e => setDraftMaxDays(Number(e.target.value))}
-                  className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-16 text-center"
-                />
+                  className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-16 text-center" />
                 <span className="text-slate-500 text-sm">ימים</span>
               </div>
-              <button
-                onClick={openSurvey}
-                disabled={!draftFrom || !draftTo}
-                className="bg-navy text-white rounded-lg px-4 py-1.5 text-sm font-semibold disabled:opacity-40 hover:bg-navy-light transition"
-              >
+              <button onClick={openSurvey} disabled={!draftFrom || !draftTo}
+                className="bg-navy text-white rounded-lg px-4 py-1.5 text-sm font-semibold disabled:opacity-40 hover:bg-navy-light transition">
                 פתח סקר
               </button>
             </div>
@@ -160,124 +160,123 @@ export default function AdminLeavePage() {
         </div>
       </div>
 
-      <div className="flex gap-2 mb-6">
-        <button onClick={() => setTab('final')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold ${tab === 'final' ? 'bg-navy text-white' : 'bg-slate-100'}`}>
-          יציאות סופי
-        </button>
-        <button onClick={() => setTab('requests')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold ${tab === 'requests' ? 'bg-navy text-white' : 'bg-slate-100'}`}>
-          בקשות ממתינות ({requests.filter(r => r.status === 'pending').length})
-        </button>
+      {/* Legend */}
+      <div className="flex gap-4 mb-4 text-xs text-slate-500 items-center flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <div className="w-6 h-6 rounded-md bg-green-500 flex items-center justify-center text-white font-bold text-xs">✓</div>
+          <span>מאושר</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-6 h-6 rounded-md bg-amber-50 border-2 border-amber-400 flex items-center justify-center text-amber-700 font-bold text-xs">?</div>
+          <span>ביקש ({totalPending} ממתינות)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-6 h-6 rounded-md bg-slate-200 flex items-center justify-center text-slate-400 font-bold text-xs">✕</div>
+          <span>נדחה</span>
+        </div>
+        <span className="text-slate-400">לחיצה על ? מאשרת, לחיצה על ✓ מבטלת</span>
       </div>
 
-      {tab === 'final' && (
-        <div className="overflow-x-auto">
-          <table className="text-sm border-collapse min-w-full">
-            <thead>
-              <tr className="text-right bg-slate-50">
-                <th className="px-3 py-2 sticky right-0 bg-slate-50">שם</th>
-                {dates.map(d => (
-                  <th key={d} className="px-2 py-2 text-center min-w-[52px]">{dayLabel(d)}</th>
-                ))}
-                <th className="px-2 py-2 text-center">סה&quot;כ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map(s => {
-                const myCount = dates.filter(d =>
-                  finalLeave.some(r => r.soldier_id === s.id && r.date === d)
-                ).length
-                return (
-                  <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="px-3 py-2 font-medium sticky right-0 bg-white">
-                      {s.full_name}
-                      {s.is_commander && <span className="text-xs text-navy mr-1">★</span>}
-                    </td>
-                    {dates.map(d => {
-                      const approved = finalLeave.some(r => r.soldier_id === s.id && r.date === d)
-                      const rejected = requests.some(r => r.soldier_id === s.id && r.date === d && r.status === 'rejected')
-                      const requested = requests.some(r => r.soldier_id === s.id && r.date === d && r.status === 'pending')
-                      return (
-                        <td key={d} className="px-1 py-1 text-center">
-                          <button
-                            disabled={rejected}
-                            onClick={() => toggleFinal(s, d)}
-                            title={requested && !approved ? 'ביקש יציאה' : rejected ? 'נדחה' : ''}
-                            className={`w-8 h-8 rounded-lg text-xs font-bold transition ${
-                              approved
-                                ? 'bg-green-500 text-white'
-                                : rejected
-                                ? 'bg-slate-300 text-slate-500 disabled:cursor-default'
-                                : requested
-                                ? 'bg-blue-100 text-blue-700 border border-blue-300'
-                                : 'bg-white hover:bg-slate-100 text-slate-300'
-                            }`}
-                          >
-                            {approved ? '✓' : rejected ? '✕' : requested ? '?' : ''}
-                          </button>
-                        </td>
-                      )
-                    })}
-                    <td className="px-2 py-2 text-center text-xs font-semibold">{myCount}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
-                <td className="px-3 py-2 sticky right-0 bg-slate-50">בבית</td>
-                {dates.map(d => (
-                  <td key={d} className="px-1 py-2 text-center">
-                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
-                      countFinal(d) >= 8 ? 'bg-red-100 text-red-700' :
-                      countFinal(d) >= 6 ? 'bg-yellow-100 text-yellow-700' :
-                      'bg-green-100 text-green-700'
-                    }`}>{countFinal(d)}</span>
-                  </td>
-                ))}
-                <td />
-              </tr>
-              <tr className="bg-slate-50">
-                <td className="px-3 py-2 sticky right-0 bg-slate-50 text-slate-500 text-xs">נוכחים</td>
-                {dates.map(d => (
-                  <td key={d} className="px-1 py-2 text-center text-xs text-slate-500">{presentCount(d)}</td>
-                ))}
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
+      <div className="overflow-x-auto">
+        <table className="text-sm border-collapse min-w-full">
+          <thead>
+            <tr className="text-right bg-slate-50">
+              <th className="px-3 py-2 sticky right-0 bg-slate-50 z-10">שם</th>
+              {dates.map(d => (
+                <th key={d} className="px-1 py-2 text-center min-w-[56px]">
+                  <div>{dayLabel(d)}</div>
+                  {countPending(d) > 0 && (
+                    <div className="text-[10px] text-amber-600 font-semibold">{countPending(d)} בקשות</div>
+                  )}
+                </th>
+              ))}
+              <th className="px-2 py-2 text-center whitespace-nowrap">ביקש / אושר</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map(s => {
+              const approvedCount = dates.filter(d => finalLeave.some(r => r.soldier_id === s.id && r.date === d)).length
+              const requestedCount = dates.filter(d =>
+                soldierRequests.some(r => r.soldier_id === s.id && r.date === d && r.status === 'pending') ||
+                finalLeave.some(r => r.soldier_id === s.id && r.date === d)
+              ).length
 
-      {tab === 'requests' && (
-        <div className="space-y-2">
-          {requests.filter(r => r.status === 'pending').length === 0 && <p className="text-slate-400 text-center py-8">אין בקשות ממתינות</p>}
-          {requests
-            .filter(r => r.status === 'pending')
-            .map(r => {
-              const soldier = soldiers.find(s => s.id === r.soldier_id)
               return (
-                <div key={r.id} className="bg-white rounded-xl p-3 border border-slate-200 flex justify-between items-center">
-                  <div>
-                    <span className="font-semibold">{soldier?.full_name}</span>
-                    <span className="text-slate-400 text-sm mr-2">{r.date}</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => approveRequest(r.id)}
-                      className="bg-green-500 text-white text-xs px-3 py-1.5 rounded-lg"
-                    >אשר ביציאות סופי</button>
-                    <button
-                      onClick={() => rejectRequest(r.id)}
-                      className="bg-red-100 text-red-700 text-xs px-3 py-1.5 rounded-lg border border-red-200"
-                    >דחה</button>
-                  </div>
-                </div>
+                <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  <td className="px-3 py-2 font-medium sticky right-0 bg-white z-10 whitespace-nowrap">
+                    {s.full_name}
+                    {s.is_commander && <span className="text-xs text-navy mr-1">★</span>}
+                  </td>
+                  {dates.map(d => {
+                    const isApproved = finalLeave.some(r => r.soldier_id === s.id && r.date === d)
+                    const isRejected = soldierRequests.some(r => r.soldier_id === s.id && r.date === d && r.status === 'rejected')
+                    const pendingReq = soldierRequests.find(r => r.soldier_id === s.id && r.date === d && r.status === 'pending')
+                    const isPending = !!pendingReq
+                    const tooltipText = isApproved
+                      ? 'מאושר — לחץ לביטול'
+                      : isPending
+                      ? `ביקש יציאה${pendingReq?.note ? ` — ${pendingReq.note}` : ''} — לחץ לאישור`
+                      : isRejected
+                      ? 'נדחה'
+                      : 'לחץ להוספה ידנית'
+
+                    return (
+                      <td key={d} className="px-1 py-1 text-center">
+                        <button
+                          disabled={isRejected}
+                          onClick={() => toggleFinal(s, d)}
+                          title={tooltipText}
+                          className={`w-9 h-9 rounded-lg text-sm font-bold transition ${
+                            isApproved
+                              ? 'bg-green-500 text-white hover:bg-green-600'
+                              : isRejected
+                              ? 'bg-slate-200 text-slate-400 cursor-default'
+                              : isPending
+                              ? 'bg-amber-50 border-2 border-amber-400 text-amber-700 hover:bg-amber-100'
+                              : 'bg-white border border-slate-200 text-slate-300 hover:border-navy hover:text-navy'
+                          }`}
+                        >
+                          {isApproved ? '✓' : isRejected ? '✕' : isPending ? '?' : ''}
+                        </button>
+                      </td>
+                    )
+                  })}
+                  <td className="px-2 py-2 text-center text-xs font-semibold whitespace-nowrap">
+                    {requestedCount > 0 || approvedCount > 0
+                      ? <span className={requestedCount > approvedCount ? 'text-amber-700' : 'text-slate-600'}>
+                          {requestedCount} / {approvedCount}
+                        </span>
+                      : <span className="text-slate-300">—</span>
+                    }
+                  </td>
+                </tr>
               )
             })}
-        </div>
-      )}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
+              <td className="px-3 py-2 sticky right-0 bg-slate-50 z-10">בבית</td>
+              {dates.map(d => (
+                <td key={d} className="px-1 py-2 text-center">
+                  <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
+                    countFinal(d) >= 8 ? 'bg-red-100 text-red-700' :
+                    countFinal(d) >= 6 ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-green-100 text-green-700'
+                  }`}>{countFinal(d)}</span>
+                </td>
+              ))}
+              <td />
+            </tr>
+            <tr className="bg-slate-50">
+              <td className="px-3 py-2 sticky right-0 bg-slate-50 z-10 text-slate-500 text-xs">נוכחים</td>
+              {dates.map(d => (
+                <td key={d} className="px-1 py-2 text-center text-xs text-slate-500">{presentCount(d)}</td>
+              ))}
+              <td />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </AdminLayout>
   )
 }
