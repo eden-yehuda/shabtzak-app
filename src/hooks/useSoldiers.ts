@@ -11,7 +11,16 @@ export function useSoldiers(activeOnly = true): Soldier[] {
       ? query(soldiersRef(), where('is_active', '==', true))
       : soldiersRef()
     return onSnapshot(q, snap => {
-      setSoldiers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Soldier)))
+      setSoldiers(snap.docs.map(d => {
+        const data = d.data()
+        return {
+          id: d.id,
+          ...data,
+          is_commander: data.is_commander ?? false,
+          notes: data.notes ?? '',
+          fixed_home_ranges: data.fixed_home_ranges ?? [],
+        } as Soldier
+      }))
     })
   }, [activeOnly])
 

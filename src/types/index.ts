@@ -3,6 +3,9 @@ export interface Soldier {
   full_name: string
   team: string
   is_active: boolean
+  is_commander: boolean
+  notes: string
+  fixed_home_ranges: Array<{ from: string; to: string }> // YYYY-MM-DD
 }
 
 export interface Schedule {
@@ -19,6 +22,10 @@ export interface TaskType {
   name: string
   difficulty: 'hard' | 'easy'
   color: string
+  requires_commander: boolean
+  soldiers_required: number
+  shift_duration_hours: number
+  is_emphasized: boolean // true for מטבח/רס"פ/של"ז
 }
 
 export interface Task {
@@ -30,6 +37,7 @@ export interface Task {
   start_datetime: Date
   end_datetime: Date
   required_people_count: number
+  requires_commander: boolean
   notes?: string
 }
 
@@ -42,8 +50,9 @@ export interface Assignment {
 export interface LeaveRequest {
   id: string
   soldier_id: string
-  date: string          // 'YYYY-MM-DD'
+  date: string // 'YYYY-MM-DD'
   status: 'pending' | 'approved' | 'rejected'
+  is_final: boolean
   created_at: Date
   reviewed_by?: string
 }

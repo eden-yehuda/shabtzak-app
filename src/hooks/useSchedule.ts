@@ -18,6 +18,7 @@ export function useScheduleTasks(scheduleId: string | null) {
           ...data,
           start_datetime: data.start_datetime.toDate(),
           end_datetime: data.end_datetime.toDate(),
+          requires_commander: data.requires_commander ?? false,
         } as Task
       }))
     })

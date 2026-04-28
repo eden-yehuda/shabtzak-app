@@ -25,7 +25,17 @@ export default function TaskModal({ scheduleId, onClose }: Props) {
     let mounted = true
     getDocs(taskTypesRef())
       .then(snap => {
-        if (mounted) setTaskTypes(snap.docs.map(d => ({ id: d.id, ...d.data() } as TaskType)))
+        if (mounted) setTaskTypes(snap.docs.map(d => {
+          const data = d.data()
+          return {
+            id: d.id,
+            ...data,
+            requires_commander: data.requires_commander ?? false,
+            soldiers_required: data.soldiers_required ?? 1,
+            shift_duration_hours: data.shift_duration_hours ?? 4,
+            is_emphasized: data.is_emphasized ?? false,
+          } as TaskType
+        }))
       })
       .catch(err => console.error('Failed to load task types', err))
     return () => { mounted = false }
@@ -43,6 +53,7 @@ export default function TaskModal({ scheduleId, onClose }: Props) {
         start_datetime: new Date(`${startDate}T${startTime}`),
         end_datetime: new Date(`${endDate}T${endTime}`),
         required_people_count: required,
+        requires_commander: false,
         notes,
       })
       onClose()

@@ -17,6 +17,7 @@ export function useLeaveRequests(soldierId?: string): LeaveRequest[] {
           id: d.id,
           ...data,
           created_at: data.created_at?.toDate() ?? new Date(),
+          is_final: data.is_final ?? false,
         } as LeaveRequest
       }))
     })

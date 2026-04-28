@@ -20,40 +20,40 @@ async function clearCollection(name: string) {
   console.log(`Cleared ${snap.docs.length} docs from ${name}`)
 }
 
+const commanders = new Set([
+  'אוראל אפנזר', 'יהונתן בוצר', 'דביר משה',
+  'אופיר אלטמן', 'רפאל אלקיים', 'עמיחי עוזיאל',
+])
+
+const soldierNotes: Record<string, string> = {
+  'עמיחי עוזיאל': 'ראשון שני',
+  'זיו צארום': 'שבוע-שבוע',
+  'אמיתי ברמה': 'שלישי רביעי',
+}
+
 const soldiers = [
-  { full_name: 'אוראל אפנזר', team: '', is_active: true },
-  { full_name: 'יהונתן בוצר', team: '', is_active: true },
-  { full_name: 'דביר משה', team: '', is_active: true },
-  { full_name: 'אופיר אלטמן', team: '', is_active: true },
-  { full_name: 'רפאל אלקיים', team: '', is_active: true },
-  { full_name: 'עמיחי עוזיאל', team: '', is_active: true },
-  { full_name: 'זיו צארום', team: '', is_active: true },
-  { full_name: 'נתניאל לישה', team: '', is_active: true },
-  { full_name: 'מאור לוי', team: '', is_active: true },
-  { full_name: 'עדן יהודה', team: '', is_active: true },
-  { full_name: 'חגי פייגנבום', team: '', is_active: true },
-  { full_name: 'אחיה בכרך', team: '', is_active: true },
-  { full_name: 'אנדריי טיאן', team: '', is_active: true },
-  { full_name: 'עידן אלמו', team: '', is_active: true },
-  { full_name: 'לאון', team: '', is_active: true },
-  { full_name: 'מאור כליפה', team: '', is_active: true },
-  { full_name: 'נתן לדקוב', team: '', is_active: true },
-  { full_name: 'ירין צור', team: '', is_active: true },
-  { full_name: 'יואב חדד', team: '', is_active: true },
-  { full_name: 'אילון אומן', team: '', is_active: true },
-  { full_name: 'יגל משה', team: '', is_active: true },
-  { full_name: 'מיתר לזימי', team: '', is_active: true },
-  { full_name: 'אמיתי ברמה', team: '', is_active: true },
-  { full_name: 'טל סימקו', team: '', is_active: true },
-]
+  'אוראל אפנזר', 'יהונתן בוצר', 'דביר משה', 'אופיר אלטמן',
+  'רפאל אלקיים', 'עמיחי עוזיאל', 'זיו צארום', 'נתניאל לישה',
+  'מאור לוי', 'עדן יהודה', 'חגי פייגנבום', 'אחיה בכרך',
+  'אנדריי טיאן', 'עידן אלמו', 'לאון', 'מאור כליפה',
+  'נתן לדקוב', 'ירין צור', 'יואב חדד', 'אילון אומן',
+  'יגל משה', 'מיתר לזימי', 'אמיתי ברמה', 'טל סימקו',
+].map(name => ({
+  full_name: name,
+  team: '',
+  is_active: true,
+  is_commander: commanders.has(name),
+  notes: soldierNotes[name] ?? '',
+  fixed_home_ranges: [],
+}))
 
 const taskTypes = [
-  { name: 'פילבוקס', difficulty: 'hard', color: '#3b82f6' },
-  { name: 'כיתת כוננות', difficulty: 'hard', color: '#ef4444' },
-  { name: 'עמדה אחורית', difficulty: 'hard', color: '#f59e0b' },
-  { name: 'של"ז', difficulty: 'easy', color: '#8b5cf6' },
-  { name: 'מטבח', difficulty: 'easy', color: '#22c55e' },
-  { name: 'רס"פ', difficulty: 'easy', color: '#06b6d4' },
+  { name: 'פילבוקס', difficulty: 'hard', color: '#3b82f6', requires_commander: true, soldiers_required: 2, shift_duration_hours: 2, is_emphasized: false },
+  { name: 'כיתת כוננות', difficulty: 'hard', color: '#ef4444', requires_commander: true, soldiers_required: 3, shift_duration_hours: 4, is_emphasized: false },
+  { name: 'עמדה אחורית', difficulty: 'hard', color: '#f59e0b', requires_commander: false, soldiers_required: 1, shift_duration_hours: 4, is_emphasized: false },
+  { name: 'של"ז', difficulty: 'easy', color: '#8b5cf6', requires_commander: false, soldiers_required: 1, shift_duration_hours: 4, is_emphasized: true },
+  { name: 'מטבח', difficulty: 'easy', color: '#22c55e', requires_commander: false, soldiers_required: 2, shift_duration_hours: 8, is_emphasized: true },
+  { name: 'רס"פ', difficulty: 'easy', color: '#06b6d4', requires_commander: false, soldiers_required: 1, shift_duration_hours: 8, is_emphasized: true },
 ]
 
 const scheduleData = {
@@ -205,6 +205,7 @@ async function seed() {
       soldier_id: soldierId,
       date: lr.date,
       status: 'approved',
+      is_final: true,
       created_at: Timestamp.now(),
     })
     leaveCount++
