@@ -1,12 +1,18 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import AdminLayout from '@/components/layout/AdminLayout'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useLeaveRequests } from '@/hooks/useLeaveRequests'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
-import { addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore'
+import { addDoc, deleteDoc, doc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore'
 import { leaveRequestsRef, updateLeaveStatus } from '@/lib/firestore'
 import { db } from '@/lib/firebase'
 import type { Soldier } from '@/types'
+
+interface SurveySettings {
+  is_open: boolean
+  from: string
+  to: string
+}
 
 function next14Days(): string[] {
   const days: string[] = []
@@ -31,6 +37,25 @@ export default function AdminLeavePage() {
   const finalLeave = useFinalLeave()
   const dates = useMemo(() => next14Days(), [])
   const [tab, setTab] = useState<'requests' | 'final'>('final')
+  const [survey, setSurvey] = useState<SurveySettings | null>(null)
+  const [draftFrom, setDraftFrom] = useState('')
+  const [draftTo, setDraftTo] = useState('')
+
+  useEffect(() => {
+    return onSnapshot(doc(db, 'settings', 'leave_survey'), snap => {
+      if (snap.exists()) setSurvey(snap.data() as SurveySettings)
+      else setSurvey({ is_open: false, from: '', to: '' })
+    })
+  }, [])
+
+  async function openSurvey() {
+    if (!draftFrom || !draftTo) return
+    await setDoc(doc(db, 'settings', 'leave_survey'), { is_open: true, from: draftFrom, to: draftTo })
+  }
+
+  async function closeSurvey() {
+    await setDoc(doc(db, 'settings', 'leave_survey'), { is_open: false, from: survey?.from ?? '', to: survey?.to ?? '' })
+  }
 
   const sorted = useMemo(() =>
     [...soldiers].filter(s => s.is_active).sort((a, b) => a.full_name.localeCompare(b.full_name, 'he')),
@@ -76,6 +101,47 @@ export default function AdminLeavePage() {
   return (
     <AdminLayout>
       <h1 className="text-xl font-bold text-navy mb-4">ניהול יציאות</h1>
+
+      {/* Survey control */}
+      <div className={`rounded-xl p-4 mb-5 border ${survey?.is_open ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-200'}`}>
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className={`text-sm font-bold ${survey?.is_open ? 'text-green-700' : 'text-slate-500'}`}>
+            {survey?.is_open ? `✅ סקר פתוח: ${survey.from} – ${survey.to}` : '⛔ סקר יציאות סגור'}
+          </span>
+          {survey?.is_open ? (
+            <button
+              onClick={closeSurvey}
+              className="bg-red-100 text-red-700 border border-red-200 rounded-lg px-3 py-1.5 text-sm font-semibold hover:bg-red-200 transition"
+            >
+              סגור סקר
+            </button>
+          ) : (
+            <div className="flex gap-2 items-center flex-wrap">
+              <input
+                type="date"
+                value={draftFrom}
+                onChange={e => setDraftFrom(e.target.value)}
+                className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+              />
+              <span className="text-slate-400 text-sm">עד</span>
+              <input
+                type="date"
+                value={draftTo}
+                onChange={e => setDraftTo(e.target.value)}
+                min={draftFrom}
+                className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+              />
+              <button
+                onClick={openSurvey}
+                disabled={!draftFrom || !draftTo}
+                className="bg-navy text-white rounded-lg px-4 py-1.5 text-sm font-semibold disabled:opacity-40 hover:bg-navy-light transition"
+              >
+                פתח סקר
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="flex gap-2 mb-6">
         <button onClick={() => setTab('final')}

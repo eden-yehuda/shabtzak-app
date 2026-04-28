@@ -94,7 +94,7 @@ const SHG  = 'ש"ג'
 const ACHR = 'אחורית'
 const SHLZ = 'של"ז'
 
-const DURATION = { [KK_A]: 12, [KK_B]: 12, [SHG]: 4, [ACHR]: 4, [SHLZ]: 8 }
+const DURATION = { [KK_A]: 12, [KK_B]: 12, [SHG]: 4, [ACHR]: 4, [SHLZ]: 12 }
 
 // soldiers entries: string name OR {name, note} for annotated assignments
 function n(name, note) { return { name, note } }
@@ -107,7 +107,7 @@ function task(date, startH, type, soldiers, requiresCommander = false) {
 
 const TASKS = [
   // ── שלישי 28.4.26 ────────────────────────────────────────────────────────
-  task('2026-04-28', 12, SHLZ, ['חגי פייגנבום']),                               // 12–20
+  task('2026-04-28',  8, SHLZ, ['חגי פייגנבום']),                               //  8–20
   task('2026-04-28', 11, ACHR, ['אחיה בכרך']),                                  // 11–15
   task('2026-04-28', 11, SHG,  ['עדן יהודה']),                                   // 11–15
   task('2026-04-28', 14, KK_A, ['דביר משה','עידן אלמו','אמיתי ברמה','יואב חדד','אנדריי טיאן'], true),   // 14–02

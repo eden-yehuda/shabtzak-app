@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { Task, Assignment, Soldier, LeaveRequest } from '@/types'
 
 interface Props {
@@ -58,6 +58,16 @@ export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
   currentSoldierId, builderMode, myTasksOnly, selectedTaskId, onSelectTask, onRemoveSoldier,
 }: Props) {
+  const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
+
+  function toggleDay(day: string) {
+    setCollapsedDays(prev => {
+      const next = new Set(prev)
+      if (next.has(day)) next.delete(day)
+      else next.add(day)
+      return next
+    })
+  }
   const { days, columns } = useMemo(() => {
     if (tasks.length === 0 && (!myTasksOnly || !currentSoldierId || finalLeave.length === 0)) {
       return { days: [], columns: [] }
@@ -157,6 +167,7 @@ export default function ScheduleGrid({
         // Build per-column task lookup
         const taskAtRow: Record<string, Record<number, Task>> = {}
         const covered: Record<string, Set<number>> = {}
+        const overflowRowSpan: Record<string, number> = {} // col → rowSpan for row-0 overflow tasks
 
         for (const col of columns) {
           taskAtRow[col] = {}
@@ -173,6 +184,22 @@ export default function ScheduleGrid({
           }
         }
 
+        // Detect tasks from previous day that overflow into this day (end_datetime falls on today after 02:00)
+        const prevDayTasks = tasksByDay[addDays(day, -1)] ?? []
+        for (const prevTask of prevDayTasks) {
+          const endDateStr = isoDate(prevTask.end_datetime)
+          const endH = prevTask.end_datetime.getHours()
+          if (endDateStr === day && endH > DAY_START_HOUR) {
+            const col = prevTask.task_type
+            if (taskAtRow[col] !== undefined && !taskAtRow[col][0]) {
+              const rows = endH - DAY_START_HOUR // how many rows (hours) it occupies at start of this day
+              taskAtRow[col][0] = prevTask
+              overflowRowSpan[col] = rows
+              for (let r = 1; r < rows; r++) covered[col].add(r)
+            }
+          }
+        }
+
         // בית block coverage (my-tasks mode only)
         // soldierHome: rows HOME_LEAVE_START_ROW..23 are "בית"
         // soldierReturning: rows 0..HOME_LEAVE_START_ROW-1 are still "בית"
@@ -180,10 +207,19 @@ export default function ScheduleGrid({
         const homeRowEnd = soldierHome ? HOURS_PER_DAY - 1 : -1 // inclusive
         const returnRowEnd = soldierReturning ? HOME_LEAVE_START_ROW - 1 : -1 // rows 0..returnRowEnd
 
+        const isCollapsed = collapsedDays.has(day)
+
         return (
           <div key={day} className="mb-8">
             {/* Day header */}
             <div className="flex items-center gap-3 mb-2">
+              <button
+                onClick={() => toggleDay(day)}
+                className="text-slate-400 hover:text-navy text-xs leading-none px-1 py-0.5 rounded hover:bg-slate-100 transition select-none"
+                title={isCollapsed ? 'הצג' : 'הסתר'}
+              >
+                {isCollapsed ? '▶' : '▼'}
+              </button>
               <h3 className="font-bold text-navy text-base">{formatDate(dayDate)}</h3>
               {soldierHome && (
                 <span className="bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-0.5 rounded-full">
@@ -214,7 +250,7 @@ export default function ScheduleGrid({
               )}
             </div>
 
-            <table className="w-full border-collapse text-xs table-fixed" dir="rtl">
+            {!isCollapsed && <table className="w-full border-collapse text-xs table-fixed" dir="rtl">
               <colgroup>
                 <col style={{ width: '52px' }} />
                 {columns.map(col => (
@@ -304,10 +340,11 @@ export default function ScheduleGrid({
                             )
                           }
 
-                          const durationHours = Math.max(1, Math.round(
+                          const durationHours = overflowRowSpan[col] ?? Math.max(1, Math.round(
                             (task.end_datetime.getTime() - task.start_datetime.getTime()) / 3600000
                           ))
                           const rowSpan = Math.min(durationHours, HOURS_PER_DAY - rowIndex)
+                          const timeLabel = `${formatHour(task.start_datetime.getHours())}–${formatHour(task.end_datetime.getHours())}`
                           const assigned = assignedFor(task)
                           const isMine = currentSoldierId ? assigned.some(s => s.id === currentSoldierId) : false
                           const missing = task.required_people_count - assigned.length
@@ -329,6 +366,7 @@ export default function ScheduleGrid({
                               onClick={onSelectTask ? () => onSelectTask(task.id) : undefined}
                             >
                               <div className="space-y-0.5">
+                                <div className={`text-[9px] mb-0.5 ${isMine ? 'text-white/60' : 'text-slate-400'}`}>{timeLabel}</div>
                                 {assigned.map((s, idx) => (
                                   <div
                                     key={s.id}
@@ -370,7 +408,7 @@ export default function ScheduleGrid({
                   })
                 })()}
               </tbody>
-            </table>
+            </table>}
           </div>
         )
       })}
