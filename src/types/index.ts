@@ -46,6 +46,7 @@ export interface Assignment {
   task_id: string
   soldier_id: string
   order: number   // 0 = task commander, 1+ = rest in Excel order
+  note?: string   // e.g. "עד 10", "מ15"
 }
 
 export interface LeaveRequest {

@@ -96,6 +96,9 @@ const SHLZ = 'של"ז'
 
 const DURATION = { [KK_A]: 12, [KK_B]: 12, [SHG]: 4, [ACHR]: 4, [SHLZ]: 8 }
 
+// soldiers entries: string name OR {name, note} for annotated assignments
+function n(name, note) { return { name, note } }
+
 function task(date, startH, type, soldiers, requiresCommander = false) {
   const dur = DURATION[type]
   const endH = (startH + dur) % 24
@@ -109,7 +112,7 @@ const TASKS = [
   task('2026-04-28', 11, SHG,  ['עדן יהודה']),                                   // 11–15
   task('2026-04-28', 14, KK_A, ['דביר משה','עידן אלמו','אמיתי ברמה','יואב חדד','אנדריי טיאן'], true),   // 14–02
   task('2026-04-28', 14, KK_B, ['רפאל אלקיים','יגל משה','טל סימקו','אחיה בכרך','נתן לדקוב'], true),    // 14–02
-  task('2026-04-28', 22, ACHR, ['יהונתן בוצר']),                                 // 22–02
+  task('2026-04-28', 23, ACHR, ['יהונתן בוצר']),                                 // 23–03
 
   // ── רביעי 29.4.26 ────────────────────────────────────────────────────────
   task('2026-04-29',  2, KK_A, ['רפאל אלקיים','ירין צור','טל סימקו','אחיה בכרך','נתן לדקוב'], true),   // 02–14
@@ -120,15 +123,15 @@ const TASKS = [
 
   // ── חמישי 30.4.26 ────────────────────────────────────────────────────────
   task('2026-04-30',  2, KK_A, ['אוראל אפנזר','ירין צור','טל סימקו','אנדריי טיאן','נתן לדקוב'], true), // 02–14
-  task('2026-04-30',  2, KK_B, ['אופיר אלטמן','זיו צארום','מיתר לזימי','יואב חדד','עידן אלמו'], true), // 02–14
+  task('2026-04-30',  2, KK_B, ['אופיר אלטמן','זיו צארום','מיתר לזימי','יואב חדד',n('עידן אלמו','עד 10')], true), // 02–14
   task('2026-04-30',  3, SHG,  ['עדן יהודה']),                                   // 03–07
   task('2026-04-30', 11, SHG,  ['מאור לוי']),                                    // 11–15
   task('2026-04-30', 14, KK_A, ['אופיר אלטמן','זיו צארום','מיתר לזימי','יואב חדד','נתניאל לישה'], true),// 14–02
-  task('2026-04-30', 14, KK_B, ['אוראל אפנזר','ירין צור','טל סימקו','לאון','מאור לוי'], true),          // 14–02
+  task('2026-04-30', 14, KK_B, ['אוראל אפנזר','ירין צור','טל סימקו','לאון',n('מאור לוי','מ-15')], true),// 14–02
 
   // ── שישי 1.5.26 ──────────────────────────────────────────────────────────
   task('2026-05-01',  2, KK_A, ['אוראל אפנזר','ירין צור','טל סימקו','לאון','מאור לוי'], true),          // 02–14
-  task('2026-05-01',  2, KK_B, ['נתניאל לישה','מיתר לזימי','יואב חדד','זיו צארום','אופיר אלטמן'], true),// 02–14
+  task('2026-05-01',  2, KK_B, ['נתניאל לישה','מיתר לזימי','יואב חדד','זיו צארום',n('אופיר אלטמן','עד 10')], true),// 02–14
   task('2026-05-01',  3, SHG,  ['אנדריי טיאן']),                                 // 03–07
   task('2026-05-01',  7, SHG,  ['נתן לדקוב']),                                   // 07–11
   task('2026-05-01', 14, KK_A, ['דביר משה','נתניאל לישה','מיתר לזימי','יואב חדד','עידן אלמו'], true),   // 14–02
@@ -226,13 +229,14 @@ async function main() {
     taskCount++
 
     for (let i = 0; i < t.soldiers.length; i++) {
-      const sid = soldierIdMap[t.soldiers[i]]
-      if (!sid) { console.warn(`  ⚠ not found: ${t.soldiers[i]}`); continue }
-      await addDoc(collection(db, 'assignments'), {
-        task_id: taskRef.id,
-        soldier_id: sid,
-        order: i,
-      })
+      const entry = t.soldiers[i]
+      const name = typeof entry === 'string' ? entry : entry.name
+      const note = typeof entry === 'string' ? undefined : entry.note
+      const sid = soldierIdMap[name]
+      if (!sid) { console.warn(`  ⚠ not found: ${name}`); continue }
+      const aData = { task_id: taskRef.id, soldier_id: sid, order: i }
+      if (note) aData.note = note
+      await addDoc(collection(db, 'assignments'), aData)
       assignCount++
     }
   }

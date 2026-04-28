@@ -100,12 +100,13 @@ export default function ScheduleGrid({
     return m
   }, [tasks])
 
-  function assignedFor(task: Task): Soldier[] {
-    return assignments
-      .filter(a => a.task_id === task.id)
-      .sort((a, b) => (a.order ?? 99) - (b.order ?? 99))
-      .map(a => soldierMap[a.soldier_id])
-      .filter((s): s is Soldier => !!s)
+  function assignedFor(task: Task): Array<Soldier & { note?: string }> {
+    const result: Array<Soldier & { note?: string }> = []
+    for (const a of assignments.filter(a => a.task_id === task.id).sort((a, b) => (a.order ?? 99) - (b.order ?? 99))) {
+      const s = soldierMap[a.soldier_id]
+      if (s) result.push({ ...s, note: a.note })
+    }
+    return result
   }
 
   function isHomeDay(dateStr: string, soldierId: string): boolean {
@@ -331,9 +332,19 @@ export default function ScheduleGrid({
                                 {assigned.map((s, idx) => (
                                   <div
                                     key={s.id}
-                                    className={`text-xs leading-snug ${idx === 0 ? 'font-bold' : ''} ${isMine ? 'text-white' : 'text-slate-800'}`}
+                                    className={`text-xs leading-snug flex items-center justify-center gap-0.5 ${idx === 0 ? 'font-bold' : ''} ${isMine ? 'text-white' : 'text-slate-800'}`}
                                   >
-                                    {s.full_name}
+                                    <span>{s.full_name}</span>
+                                    {s.note && (
+                                      <span
+                                        title={s.note}
+                                        className={`inline-flex items-center text-[9px] font-semibold px-1 py-0 rounded cursor-default select-none ${
+                                          isMine ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'
+                                        }`}
+                                      >
+                                        {s.note}
+                                      </span>
+                                    )}
                                     {builderMode && onRemoveSoldier && (
                                       <button
                                         onClick={e => { e.stopPropagation(); onRemoveSoldier(task.id, s.id) }}
