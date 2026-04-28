@@ -54,7 +54,7 @@ export default function LeaveRequestModal({ soldiers, from, to, onClose }: Props
   async function submit() {
     if (!soldierId || selectedDays.size === 0) return
     setSubmitting(true)
-    for (const date of selectedDays) {
+    for (const date of Array.from(selectedDays)) {
       await addDoc(collection(db, 'leave_requests'), {
         soldier_id: soldierId,
         date,

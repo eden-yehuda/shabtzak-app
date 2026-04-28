@@ -17,6 +17,16 @@ interface Props {
 // Visual order right-to-left (RTL): כ"כ א → כ"כ ב → אחורית → ש"ג → של"ז
 const COLUMN_ORDER = ['כ"כ א', 'כ"כ ב', 'אחורית', 'ש"ג', 'של"ז']
 
+// Colors per column type: [header bg+text, card bg, card border, card text]
+const COL_STYLE: Record<string, { head: string; card: string; border: string; text: string; mine: string }> = {
+  'כ"כ א':  { head: 'bg-blue-600 text-white',   card: 'bg-blue-50',   border: 'border-blue-300',   text: 'text-blue-900',   mine: 'bg-blue-700 text-white' },
+  'כ"כ ב':  { head: 'bg-indigo-600 text-white',  card: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-900', mine: 'bg-indigo-700 text-white' },
+  'אחורית': { head: 'bg-amber-600 text-white',   card: 'bg-amber-50',  border: 'border-amber-300',  text: 'text-amber-900',  mine: 'bg-amber-600 text-white' },
+  'ש"ג':    { head: 'bg-emerald-600 text-white', card: 'bg-emerald-50',border: 'border-emerald-300',text: 'text-emerald-900',mine: 'bg-emerald-700 text-white' },
+  'של"ז':   { head: 'bg-violet-600 text-white',  card: 'bg-violet-50', border: 'border-violet-300', text: 'text-violet-900', mine: 'bg-violet-700 text-white' },
+}
+const DEFAULT_COL_STYLE = { head: 'bg-slate-600 text-white', card: 'bg-slate-50', border: 'border-slate-300', text: 'text-slate-900', mine: 'bg-slate-700 text-white' }
+
 // Military day: 02:00–01:59 (24 rows starting at 02:00)
 const DAY_START_HOUR = 2
 const HOURS_PER_DAY = 24
@@ -252,17 +262,20 @@ export default function ScheduleGrid({
 
             {!isCollapsed && <table className="w-full border-collapse text-xs table-fixed" dir="rtl">
               <colgroup>
-                <col style={{ width: '52px' }} />
+                <col style={{ width: '48px' }} />
                 {columns.map(col => (
                   <col key={col} style={{ width: `${100 / columns.length}%` }} />
                 ))}
               </colgroup>
               <thead>
-                <tr className="bg-slate-50">
-                  <th className="border border-slate-200 px-1 py-1 text-center text-xs font-semibold">שעה</th>
-                  {columns.map(col => (
-                    <th key={col} className="border border-slate-200 px-1 py-1 text-center text-xs font-semibold">{col}</th>
-                  ))}
+                <tr>
+                  <th className="border border-slate-300 bg-slate-700 text-white px-1 py-1.5 text-center text-xs font-bold rounded-tr-sm">שעה</th>
+                  {columns.map(col => {
+                    const cs = COL_STYLE[col] ?? DEFAULT_COL_STYLE
+                    return (
+                      <th key={col} className={`border border-slate-300 px-1 py-1.5 text-center text-xs font-bold ${cs.head}`}>{col}</th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -280,7 +293,7 @@ export default function ScheduleGrid({
                       const span = returnRowEnd + 1
                       return (
                         <tr key={rowIndex}>
-                          <td className="border border-slate-200 px-1 font-mono text-xs font-semibold h-7 text-center align-middle text-slate-400">
+                          <td className="border border-slate-300 px-1 font-mono text-xs font-bold h-8 text-center align-middle bg-slate-700 text-slate-200">
                             {formatHour(hour)}
                           </td>
                           <td
@@ -302,9 +315,9 @@ export default function ScheduleGrid({
                       const span = HOURS_PER_DAY - homeRowStart
                       return (
                         <tr key={rowIndex}>
-                          <td className={`border border-slate-200 px-1 font-mono text-xs font-semibold h-7 text-center align-middle ${isChangeover ? 'text-yellow-700' : 'text-slate-400'}`}>
+                          <td className={`border border-slate-300 px-1 font-mono text-xs font-bold h-8 text-center align-middle ${isChangeover ? 'bg-yellow-100 text-yellow-800' : 'bg-slate-700 text-slate-200'}`}>
                             {formatHour(hour)}
-                            {isChangeover && <span className="block text-yellow-600" style={{ fontSize: '9px' }}>⟳ חילוף</span>}
+                            {isChangeover && <span className="block text-yellow-700" style={{ fontSize: '9px' }}>⟳ חילוף</span>}
                           </td>
                           <td
                             colSpan={columns.length}
@@ -321,8 +334,8 @@ export default function ScheduleGrid({
 
                     return (
                       <tr key={rowIndex} className={isChangeover ? 'bg-yellow-50' : ''}>
-                        <td className={`border border-slate-200 px-1 font-mono text-xs font-semibold h-7 text-center align-middle ${
-                          isChangeover ? 'text-yellow-700' : 'text-slate-400'
+                        <td className={`border border-slate-300 px-1 font-mono text-xs font-bold h-8 text-center align-middle ${
+                          isChangeover ? 'bg-yellow-100 text-yellow-800' : 'bg-slate-700 text-slate-200'
                         }`}>
                           {formatHour(hour)}
                           {isChangeover && (
@@ -336,10 +349,11 @@ export default function ScheduleGrid({
 
                           if (!task) {
                             return (
-                              <td key={col} className="border border-slate-100 bg-slate-50 h-7" />
+                              <td key={col} className="border border-slate-200 bg-slate-100 h-8" />
                             )
                           }
 
+                          const cs = COL_STYLE[col] ?? DEFAULT_COL_STYLE
                           const durationHours = overflowRowSpan[col] ?? Math.max(1, Math.round(
                             (task.end_datetime.getTime() - task.start_datetime.getTime()) / 3600000
                           ))
@@ -350,35 +364,36 @@ export default function ScheduleGrid({
                           const missing = task.required_people_count - assigned.length
                           const commanderMissing = task.requires_commander && !assigned.some(s => s.is_commander)
 
+                          const cardClass = task.id === selectedTaskId
+                            ? 'bg-sky-100 border-sky-400 ring-2 ring-sky-400'
+                            : isMine
+                            ? cs.mine
+                            : commanderMissing
+                            ? 'bg-red-100 border-red-400 text-red-900'
+                            : missing > 0
+                            ? 'bg-orange-100 border-orange-400 text-orange-900'
+                            : `${cs.card} ${cs.border} ${cs.text}`
+
                           return (
                             <td
                               key={col}
                               rowSpan={rowSpan}
-                              className={`border border-slate-200 px-2 py-1 text-center align-middle transition ${
-                                onSelectTask ? 'cursor-pointer' : ''
-                              } ${
-                                task.id === selectedTaskId ? 'bg-blue-50 ring-2 ring-navy ring-inset' :
-                                isMine ? 'bg-navy text-white' :
-                                commanderMissing ? 'bg-red-50' :
-                                missing > 0 ? 'bg-orange-50' :
-                                'bg-white'
-                              }`}
+                              className={`border border-slate-200 p-1 align-top h-8 ${onSelectTask ? 'cursor-pointer' : ''}`}
                               onClick={onSelectTask ? () => onSelectTask(task.id) : undefined}
                             >
+                              <div className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition ${cardClass}`}>
                               <div className="space-y-0.5">
-                                <div className={`text-[9px] mb-0.5 ${isMine ? 'text-white/60' : 'text-slate-400'}`}>{timeLabel}</div>
+                                <div className={`text-[9px] mb-0.5 opacity-60`}>{timeLabel}</div>
                                 {assigned.map((s, idx) => (
                                   <div
                                     key={s.id}
-                                    className={`text-xs leading-snug flex items-center justify-center gap-0.5 ${idx === 0 ? 'font-bold' : ''} ${isMine ? 'text-white' : 'text-slate-800'}`}
+                                    className={`text-xs leading-snug flex items-center justify-center gap-0.5 ${idx === 0 ? 'font-bold' : ''}`}
                                   >
                                     <span>{s.full_name}</span>
                                     {s.note && (
                                       <span
                                         title={s.note}
-                                        className={`inline-flex items-center text-[9px] font-semibold px-1 py-0 rounded cursor-default select-none ${
-                                          isMine ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'
-                                        }`}
+                                        className="inline-flex items-center text-[9px] font-semibold px-1 py-0 rounded cursor-default select-none bg-white/40"
                                       >
                                         {s.note}
                                       </span>
@@ -386,7 +401,7 @@ export default function ScheduleGrid({
                                     {builderMode && onRemoveSoldier && (
                                       <button
                                         onClick={e => { e.stopPropagation(); onRemoveSoldier(task.id, s.id) }}
-                                        className="mr-1 text-slate-300 hover:text-red-500 leading-none"
+                                        className="mr-1 opacity-40 hover:opacity-100 hover:text-red-500 leading-none"
                                       >
                                         ×
                                       </button>
@@ -399,6 +414,7 @@ export default function ScheduleGrid({
                                 {commanderMissing && (
                                   <div className="text-red-600 font-semibold">★?</div>
                                 )}
+                              </div>
                               </div>
                             </td>
                           )
