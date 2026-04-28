@@ -24,6 +24,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <span className="font-bold text-lg">{'מנהל שבצ"ק'}</span>
         <nav className="flex gap-4 text-sm">
           <Link href="/admin/dashboard" className="hover:underline">דשבורד</Link>
+          <Link href="/admin/soldiers" className="hover:underline">כוח אדם</Link>
           <Link href="/admin/schedule/new" className="hover:underline">{'שבצ"ק חדש'}</Link>
           <Link href="/admin/leave" className="hover:underline">יציאות</Link>
           <Link href="/admin/justice" className="hover:underline">טבלת צדק</Link>
