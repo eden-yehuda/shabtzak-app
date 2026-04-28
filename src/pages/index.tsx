@@ -167,6 +167,7 @@ export default function HomePage() {
             soldiers={soldiers}
             finalLeave={finalLeave}
             currentSoldierId={selectedSoldierId}
+            myTasksOnly={myTasksOnly}
           />
       }
     </Layout>

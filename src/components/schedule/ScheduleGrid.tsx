@@ -8,6 +8,7 @@ interface Props {
   finalLeave?: LeaveRequest[]
   currentSoldierId?: string | null
   builderMode?: boolean
+  myTasksOnly?: boolean
   selectedTaskId?: string | null
   onSelectTask?: (taskId: string) => void
   onRemoveSoldier?: (taskId: string, soldierId: string) => void
@@ -20,6 +21,10 @@ const COLUMN_ORDER = ['כ"כ א', 'כ"כ ב', 'אחורית', 'ש"ג', 'של"ז'
 const DAY_START_HOUR = 2
 const HOURS_PER_DAY = 24
 const DAY_HOURS = Array.from({ length: HOURS_PER_DAY }, (_, i) => (i + DAY_START_HOUR) % HOURS_PER_DAY)
+
+// Home leave: soldier leaves at 10:00, returns next day 10:00
+const HOME_LEAVE_START = 10 // hour
+const HOME_LEAVE_START_ROW = (HOME_LEAVE_START - DAY_START_HOUR + HOURS_PER_DAY) % HOURS_PER_DAY // row 8
 
 function hourToRowIndex(hour: number): number {
   return (hour - DAY_START_HOUR + HOURS_PER_DAY) % HOURS_PER_DAY
@@ -43,22 +48,41 @@ function isoDate(d: Date) {
   ].join('-')
 }
 
+function addDays(dateStr: string, n: number): string {
+  const d = new Date(dateStr + 'T12:00:00')
+  d.setDate(d.getDate() + n)
+  return isoDate(d)
+}
+
 export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
-  currentSoldierId, builderMode, selectedTaskId, onSelectTask, onRemoveSoldier,
+  currentSoldierId, builderMode, myTasksOnly, selectedTaskId, onSelectTask, onRemoveSoldier,
 }: Props) {
   const { days, columns } = useMemo(() => {
-    if (tasks.length === 0) return { days: [], columns: [] }
+    if (tasks.length === 0 && (!myTasksOnly || !currentSoldierId || finalLeave.length === 0)) {
+      return { days: [], columns: [] }
+    }
 
-    // Collect all unique task types, sorted by the fixed Excel column order
     const typeSet = new Set(tasks.map(t => t.task_type))
     const cols = COLUMN_ORDER.filter(c => typeSet.has(c))
-    // Append any unknown types at the end
     typeSet.forEach(c => { if (!cols.includes(c)) cols.push(c) })
 
-    const sortedDays = Array.from(new Set(tasks.map(t => isoDate(t.start_datetime)))).sort()
+    // In my-tasks mode: also include days the soldier is home (so we can show בית block)
+    const taskDays = new Set(tasks.map(t => isoDate(t.start_datetime)))
+    if (myTasksOnly && currentSoldierId) {
+      finalLeave
+        .filter(r => r.soldier_id === currentSoldierId && r.status === 'approved')
+        .forEach(r => taskDays.add(r.date))
+    }
+
+    const sortedDays = Array.from(taskDays).sort()
+    if (sortedDays.length === 0) return { days: [], columns: [] }
+
+    // Ensure columns has at least one entry even if all days are home days
+    if (cols.length === 0) cols.push(...COLUMN_ORDER)
+
     return { days: sortedDays, columns: cols }
-  }, [tasks])
+  }, [tasks, finalLeave, myTasksOnly, currentSoldierId])
 
   const soldierMap = useMemo(() => {
     const m: Record<string, Soldier> = {}
@@ -76,7 +100,6 @@ export default function ScheduleGrid({
     return m
   }, [tasks])
 
-  // Returns soldiers sorted by their assignment order (index 0 = task commander)
   function assignedFor(task: Task): Soldier[] {
     return assignments
       .filter(a => a.task_id === task.id)
@@ -87,6 +110,13 @@ export default function ScheduleGrid({
 
   function isHomeDay(dateStr: string, soldierId: string): boolean {
     return finalLeave.some(r => r.date === dateStr && r.soldier_id === soldierId && r.status === 'approved')
+  }
+
+  // Returns true if the soldier is still home on this day due to leave from previous day
+  // (i.e., soldier left previous day and returns at 10:00 today — rows 02:00–09:00 are "בית")
+  function isReturnMorning(dateStr: string, soldierId: string): boolean {
+    const prevDay = addDays(dateStr, -1)
+    return isHomeDay(prevDay, soldierId) && !isHomeDay(dateStr, soldierId)
   }
 
   function helperForDay(dateStr: string) {
@@ -121,8 +151,9 @@ export default function ScheduleGrid({
         const helper = builderMode ? helperForDay(day) : null
         const dayDate = new Date(day + 'T12:00:00')
         const soldierHome = currentSoldierId ? isHomeDay(day, currentSoldierId) : false
+        const soldierReturning = currentSoldierId ? isReturnMorning(day, currentSoldierId) : false
 
-        // Build per-column lookup: rowIndex → task, covered rows set
+        // Build per-column task lookup
         const taskAtRow: Record<string, Record<number, Task>> = {}
         const covered: Record<string, Set<number>> = {}
 
@@ -141,6 +172,13 @@ export default function ScheduleGrid({
           }
         }
 
+        // בית block coverage (my-tasks mode only)
+        // soldierHome: rows HOME_LEAVE_START_ROW..23 are "בית"
+        // soldierReturning: rows 0..HOME_LEAVE_START_ROW-1 are still "בית"
+        const homeRowStart = soldierHome ? HOME_LEAVE_START_ROW : -1
+        const homeRowEnd = soldierHome ? HOURS_PER_DAY - 1 : -1 // inclusive
+        const returnRowEnd = soldierReturning ? HOME_LEAVE_START_ROW - 1 : -1 // rows 0..returnRowEnd
+
         return (
           <div key={day} className="mb-8">
             {/* Day header */}
@@ -149,6 +187,11 @@ export default function ScheduleGrid({
               {soldierHome && (
                 <span className="bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-0.5 rounded-full">
                   🏠 בית
+                </span>
+              )}
+              {soldierReturning && !soldierHome && (
+                <span className="bg-green-50 text-green-700 text-xs font-semibold px-3 py-0.5 rounded-full">
+                  ↩ חוזר 10:00
                 </span>
               )}
               {helper && (
@@ -186,83 +229,135 @@ export default function ScheduleGrid({
                 </tr>
               </thead>
               <tbody>
-                {DAY_HOURS.map((hour, rowIndex) => {
-                  const isChangeover = hour === 10 && builderMode
-                  return (
-                    <tr key={rowIndex} className={isChangeover ? 'bg-yellow-50' : ''}>
-                      <td className={`border border-slate-200 px-1 font-mono text-xs font-semibold h-7 text-center align-middle ${
-                        isChangeover ? 'text-yellow-700' : 'text-slate-400'
-                      }`}>
-                        {formatHour(hour)}
-                        {isChangeover && (
-                          <span className="block text-yellow-600" style={{ fontSize: '9px' }}>⟳ חילוף</span>
-                        )}
-                      </td>
-                      {columns.map(col => {
-                        if (covered[col].has(rowIndex)) return null
+                {(() => {
+                  // Track if home block rendered (only once per section)
+                  let homeBlockRendered = false
+                  let returnBlockRendered = false
 
-                        const task = taskAtRow[col][rowIndex] ?? null
+                  return DAY_HOURS.map((hour, rowIndex) => {
+                    const isChangeover = hour === 10 && builderMode
 
-                        if (!task) {
-                          return (
-                            <td key={col} className="border border-slate-100 bg-slate-50 h-7" />
-                          )
-                        }
-
-                        const durationHours = Math.max(1, Math.round(
-                          (task.end_datetime.getTime() - task.start_datetime.getTime()) / 3600000
-                        ))
-                        const rowSpan = Math.min(durationHours, HOURS_PER_DAY - rowIndex)
-                        const assigned = assignedFor(task)
-                        const isMine = currentSoldierId ? assigned.some(s => s.id === currentSoldierId) : false
-                        const missing = task.required_people_count - assigned.length
-                        const commanderMissing = task.requires_commander && !assigned.some(s => s.is_commander)
-
-                        return (
-                          <td
-                            key={col}
-                            rowSpan={rowSpan}
-                            className={`border border-slate-200 px-2 py-1 text-center align-middle transition ${
-                              onSelectTask ? 'cursor-pointer' : ''
-                            } ${
-                              task.id === selectedTaskId ? 'bg-blue-50 ring-2 ring-navy ring-inset' :
-                              isMine ? 'bg-navy text-white' :
-                              commanderMissing ? 'bg-red-50' :
-                              missing > 0 ? 'bg-orange-50' :
-                              'bg-white'
-                            }`}
-                            onClick={onSelectTask ? () => onSelectTask(task.id) : undefined}
-                          >
-                            <div className="space-y-0.5">
-                              {assigned.map((s, idx) => (
-                                <div
-                                  key={s.id}
-                                  className={`text-xs leading-snug ${idx === 0 ? 'font-bold' : ''} ${isMine ? 'text-white' : 'text-slate-800'}`}
-                                >
-                                  {s.full_name}
-                                  {builderMode && onRemoveSoldier && (
-                                    <button
-                                      onClick={e => { e.stopPropagation(); onRemoveSoldier(task.id, s.id) }}
-                                      className="mr-1 text-slate-300 hover:text-red-500 leading-none"
-                                    >
-                                      ×
-                                    </button>
-                                  )}
-                                </div>
-                              ))}
-                              {missing > 0 && (
-                                <div className="text-orange-600 font-semibold">−{missing}</div>
-                              )}
-                              {commanderMissing && (
-                                <div className="text-red-600 font-semibold">★?</div>
-                              )}
-                            </div>
+                    // בית block: returning morning (rows 0..returnRowEnd)
+                    if (myTasksOnly && soldierReturning && rowIndex <= returnRowEnd && !returnBlockRendered) {
+                      returnBlockRendered = true
+                      const span = returnRowEnd + 1
+                      return (
+                        <tr key={rowIndex}>
+                          <td className="border border-slate-200 px-1 font-mono text-xs font-semibold h-7 text-center align-middle text-slate-400">
+                            {formatHour(hour)}
                           </td>
-                        )
-                      })}
-                    </tr>
-                  )
-                })}
+                          <td
+                            colSpan={columns.length}
+                            rowSpan={span}
+                            className="border border-blue-200 bg-blue-50 text-center align-middle"
+                          >
+                            <div className="text-blue-700 font-bold text-sm py-1">🏠 בית</div>
+                            <div className="text-blue-500 text-xs">02:00–10:00</div>
+                          </td>
+                        </tr>
+                      )
+                    }
+                    if (myTasksOnly && soldierReturning && rowIndex <= returnRowEnd) return null
+
+                    // בית block: home day (rows HOME_LEAVE_START_ROW..23)
+                    if (myTasksOnly && soldierHome && rowIndex >= homeRowStart && !homeBlockRendered) {
+                      homeBlockRendered = true
+                      const span = HOURS_PER_DAY - homeRowStart
+                      return (
+                        <tr key={rowIndex}>
+                          <td className={`border border-slate-200 px-1 font-mono text-xs font-semibold h-7 text-center align-middle ${isChangeover ? 'text-yellow-700' : 'text-slate-400'}`}>
+                            {formatHour(hour)}
+                            {isChangeover && <span className="block text-yellow-600" style={{ fontSize: '9px' }}>⟳ חילוף</span>}
+                          </td>
+                          <td
+                            colSpan={columns.length}
+                            rowSpan={span}
+                            className="border border-blue-200 bg-blue-50 text-center align-middle"
+                          >
+                            <div className="text-blue-700 font-bold text-sm py-1">🏠 בית</div>
+                            <div className="text-blue-500 text-xs">10:00–10:00</div>
+                          </td>
+                        </tr>
+                      )
+                    }
+                    if (myTasksOnly && soldierHome && rowIndex >= homeRowStart) return null
+
+                    return (
+                      <tr key={rowIndex} className={isChangeover ? 'bg-yellow-50' : ''}>
+                        <td className={`border border-slate-200 px-1 font-mono text-xs font-semibold h-7 text-center align-middle ${
+                          isChangeover ? 'text-yellow-700' : 'text-slate-400'
+                        }`}>
+                          {formatHour(hour)}
+                          {isChangeover && (
+                            <span className="block text-yellow-600" style={{ fontSize: '9px' }}>⟳ חילוף</span>
+                          )}
+                        </td>
+                        {columns.map(col => {
+                          if (covered[col].has(rowIndex)) return null
+
+                          const task = taskAtRow[col][rowIndex] ?? null
+
+                          if (!task) {
+                            return (
+                              <td key={col} className="border border-slate-100 bg-slate-50 h-7" />
+                            )
+                          }
+
+                          const durationHours = Math.max(1, Math.round(
+                            (task.end_datetime.getTime() - task.start_datetime.getTime()) / 3600000
+                          ))
+                          const rowSpan = Math.min(durationHours, HOURS_PER_DAY - rowIndex)
+                          const assigned = assignedFor(task)
+                          const isMine = currentSoldierId ? assigned.some(s => s.id === currentSoldierId) : false
+                          const missing = task.required_people_count - assigned.length
+                          const commanderMissing = task.requires_commander && !assigned.some(s => s.is_commander)
+
+                          return (
+                            <td
+                              key={col}
+                              rowSpan={rowSpan}
+                              className={`border border-slate-200 px-2 py-1 text-center align-middle transition ${
+                                onSelectTask ? 'cursor-pointer' : ''
+                              } ${
+                                task.id === selectedTaskId ? 'bg-blue-50 ring-2 ring-navy ring-inset' :
+                                isMine ? 'bg-navy text-white' :
+                                commanderMissing ? 'bg-red-50' :
+                                missing > 0 ? 'bg-orange-50' :
+                                'bg-white'
+                              }`}
+                              onClick={onSelectTask ? () => onSelectTask(task.id) : undefined}
+                            >
+                              <div className="space-y-0.5">
+                                {assigned.map((s, idx) => (
+                                  <div
+                                    key={s.id}
+                                    className={`text-xs leading-snug ${idx === 0 ? 'font-bold' : ''} ${isMine ? 'text-white' : 'text-slate-800'}`}
+                                  >
+                                    {s.full_name}
+                                    {builderMode && onRemoveSoldier && (
+                                      <button
+                                        onClick={e => { e.stopPropagation(); onRemoveSoldier(task.id, s.id) }}
+                                        className="mr-1 text-slate-300 hover:text-red-500 leading-none"
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                                {missing > 0 && (
+                                  <div className="text-orange-600 font-semibold">−{missing}</div>
+                                )}
+                                {commanderMissing && (
+                                  <div className="text-red-600 font-semibold">★?</div>
+                                )}
+                              </div>
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })
+                })()}
               </tbody>
             </table>
           </div>
