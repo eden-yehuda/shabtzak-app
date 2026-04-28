@@ -4,7 +4,7 @@ import { useSoldiers } from '@/hooks/useSoldiers'
 import { useLeaveRequests } from '@/hooks/useLeaveRequests'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
 import { addDoc, deleteDoc, doc } from 'firebase/firestore'
-import { leaveRequestsRef } from '@/lib/firestore'
+import { leaveRequestsRef, updateLeaveStatus } from '@/lib/firestore'
 import { db } from '@/lib/firebase'
 import type { Soldier } from '@/types'
 
@@ -54,6 +54,10 @@ export default function AdminLeavePage() {
 
   const requests = pending.filter(r => !r.is_final)
 
+  async function rejectRequest(requestId: string) {
+    await updateLeaveStatus(requestId, 'rejected', 'admin')
+  }
+
   function countFinal(date: string) {
     return finalLeave.filter(r => r.date === date && r.status === 'approved').length
   }
@@ -102,21 +106,24 @@ export default function AdminLeavePage() {
                     </td>
                     {dates.map(d => {
                       const approved = finalLeave.some(r => r.soldier_id === s.id && r.date === d)
-                      const requested = requests.some(r => r.soldier_id === s.id && r.date === d)
+                      const rejected = requests.some(r => r.soldier_id === s.id && r.date === d && r.status === 'rejected')
+                      const requested = requests.some(r => r.soldier_id === s.id && r.date === d && r.status === 'pending')
                       return (
                         <td key={d} className="px-1 py-1 text-center">
                           <button
-                            onClick={() => toggleFinal(s, d)}
-                            title={requested && !approved ? 'ביקש יציאה' : ''}
+                            onClick={!rejected ? () => toggleFinal(s, d) : undefined}
+                            title={requested && !approved ? 'ביקש יציאה' : rejected ? 'נדחה' : ''}
                             className={`w-8 h-8 rounded-lg text-xs font-bold transition ${
                               approved
                                 ? 'bg-green-500 text-white'
+                                : rejected
+                                ? 'bg-slate-300 text-slate-500 cursor-default'
                                 : requested
                                 ? 'bg-blue-100 text-blue-700 border border-blue-300'
-                                : 'bg-slate-100 hover:bg-slate-200 text-slate-400'
+                                : 'bg-white hover:bg-slate-100 text-slate-300'
                             }`}
                           >
-                            {approved ? '✓' : requested ? '?' : ''}
+                            {approved ? '✓' : rejected ? '✕' : requested ? '?' : ''}
                           </button>
                         </td>
                       )
@@ -165,10 +172,16 @@ export default function AdminLeavePage() {
                     <span className="font-semibold">{soldier?.full_name}</span>
                     <span className="text-slate-400 text-sm mr-2">{r.date}</span>
                   </div>
-                  <button
-                    onClick={() => soldier && toggleFinal(soldier, r.date)}
-                    className="bg-green-500 text-white text-xs px-3 py-1.5 rounded-lg"
-                  >אשר ביציאות סופי</button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => soldier && toggleFinal(soldier, r.date)}
+                      className="bg-green-500 text-white text-xs px-3 py-1.5 rounded-lg"
+                    >אשר ביציאות סופי</button>
+                    <button
+                      onClick={() => rejectRequest(r.id)}
+                      className="bg-red-100 text-red-700 text-xs px-3 py-1.5 rounded-lg border border-red-200"
+                    >דחה</button>
+                  </div>
                 </div>
               )
             })}
