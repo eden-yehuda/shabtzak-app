@@ -29,6 +29,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <Link href="/admin/leave" className="hover:underline">יציאות</Link>
           <Link href="/admin/justice" className="hover:underline">טבלת צדק</Link>
           <Link href="/admin/inquiries" className="hover:underline">פניות</Link>
+          <Link href="/admin/conditions" className="hover:underline">התניות</Link>
         </nav>
       </header>
       <main className="max-w-5xl mx-auto px-4 py-6">{children}</main>

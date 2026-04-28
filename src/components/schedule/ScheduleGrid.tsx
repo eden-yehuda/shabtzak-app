@@ -199,12 +199,12 @@ export default function ScheduleGrid({
                 <div className="flex gap-2 text-xs text-slate-500 flex-wrap">
                   {helper.leaving.length > 0 && (
                     <span className="bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full">
-                      יוצאים 10:00: {helper.leaving.join(', ')}
+                      יציאה הביתה ב-10:00: {helper.leaving.join(', ')}
                     </span>
                   )}
                   {helper.returning.length > 0 && (
                     <span className="bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
-                      חוזרים 10:00: {helper.returning.join(', ')}
+                      חזרה מהבית (עד 10:00): {helper.returning.join(', ')}
                     </span>
                   )}
                   <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
