@@ -100,7 +100,7 @@ export default function Home() {
   const canGoForward = scheduleIdx > 0
 
   return (
-    <Layout title={'שבצ"ק עוף'}>
+    <Layout title={'שבצק צוות אוראל'}>
       {/* Name selector */}
       <div className="relative mb-4">
         <div className="flex gap-2">

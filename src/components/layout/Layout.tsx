@@ -2,7 +2,7 @@ import Head from 'next/head'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
-export default function Layout({ children, title = 'שבצ"ק עוף' }: { children: ReactNode; title?: string }) {
+export default function Layout({ children, title = 'שבצק צוות אוראל' }: { children: ReactNode; title?: string }) {
   return (
     <>
       <Head>
@@ -11,7 +11,7 @@ export default function Layout({ children, title = 'שבצ"ק עוף' }: { child
       </Head>
       <div className="min-h-screen bg-slate-50 font-sans" dir="rtl">
         <header className="bg-navy text-white px-4 py-3 flex justify-between items-center">
-          <span className="font-bold text-lg">{'שבצ"ק עוף'}</span>
+          <span className="font-bold text-lg">שבצק צוות אוראל</span>
           <Link href="/admin/login" className="text-xs opacity-70 hover:opacity-100 transition">
             כניסת אחראי
           </Link>
