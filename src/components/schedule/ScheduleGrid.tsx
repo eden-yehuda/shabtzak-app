@@ -13,8 +13,8 @@ interface Props {
   onRemoveSoldier?: (taskId: string, soldierId: string) => void
 }
 
-// Fixed column order matching the original Excel
-const COLUMN_ORDER = ['אחורית', 'ש"ג', 'של"ז', 'כ"כ א', 'כ"כ ב']
+// Visual order right-to-left (RTL): כ"כ א → כ"כ ב → אחורית → ש"ג → של"ז
+const COLUMN_ORDER = ['כ"כ א', 'כ"כ ב', 'אחורית', 'ש"ג', 'של"ז']
 
 // Military day: 02:00–01:59 (24 rows starting at 02:00)
 const DAY_START_HOUR = 2
@@ -35,7 +35,12 @@ function formatDate(d: Date) {
 }
 
 function isoDate(d: Date) {
-  return d.toISOString().split('T')[0]
+  // Use local date (Israel timezone) — NOT UTC — to avoid midnight-crossover bugs
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-')
 }
 
 export default function ScheduleGrid({
@@ -165,12 +170,18 @@ export default function ScheduleGrid({
               )}
             </div>
 
-            <table className="w-full border-collapse text-xs" dir="rtl">
+            <table className="w-full border-collapse text-xs table-fixed" dir="rtl">
+              <colgroup>
+                <col style={{ width: '52px' }} />
+                {columns.map(col => (
+                  <col key={col} style={{ width: `${100 / columns.length}%` }} />
+                ))}
+              </colgroup>
               <thead>
                 <tr className="bg-slate-50">
-                  <th className="border border-slate-200 px-2 py-1 w-14 text-center text-xs font-semibold">שעה</th>
+                  <th className="border border-slate-200 px-1 py-1 text-center text-xs font-semibold">שעה</th>
                   {columns.map(col => (
-                    <th key={col} className="border border-slate-200 px-2 py-1 text-center text-xs font-semibold">{col}</th>
+                    <th key={col} className="border border-slate-200 px-1 py-1 text-center text-xs font-semibold">{col}</th>
                   ))}
                 </tr>
               </thead>
