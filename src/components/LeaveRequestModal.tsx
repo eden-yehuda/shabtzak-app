@@ -5,8 +5,9 @@ import type { Soldier } from '@/types'
 
 interface Props {
   soldiers: Soldier[]
-  from: string   // YYYY-MM-DD
-  to: string     // YYYY-MM-DD
+  from: string
+  to: string
+  maxDays: number  // 0 = no limit
   onClose: () => void
 }
 
@@ -25,18 +26,20 @@ function daysInRange(from: string, to: string): string[] {
 
 function dayLabel(dateStr: string) {
   const d = new Date(dateStr + 'T12:00:00')
-  const dayName = DAY_NAMES[d.getDay()]
-  return `${dayName} ${d.getDate()}/${d.getMonth() + 1}`
+  return `${DAY_NAMES[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
 }
 
-export default function LeaveRequestModal({ soldiers, from, to, onClose }: Props) {
+export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose }: Props) {
   const [search, setSearch] = useState('')
   const [soldierId, setSoldierId] = useState('')
   const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set())
+  const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
 
   const days = daysInRange(from, to)
+  const count = selectedDays.size
+  const overQuota = maxDays > 0 && count > maxDays
 
   const filtered = soldiers
     .filter(s => s.is_active && s.full_name.includes(search))
@@ -52,7 +55,7 @@ export default function LeaveRequestModal({ soldiers, from, to, onClose }: Props
   }
 
   async function submit() {
-    if (!soldierId || selectedDays.size === 0) return
+    if (!soldierId || count === 0) return
     setSubmitting(true)
     for (const date of Array.from(selectedDays)) {
       await addDoc(collection(db, 'leave_requests'), {
@@ -60,6 +63,7 @@ export default function LeaveRequestModal({ soldiers, from, to, onClose }: Props
         date,
         status: 'pending',
         is_final: false,
+        note: note.trim() || null,
         created_at: Timestamp.now(),
       })
     }
@@ -75,10 +79,7 @@ export default function LeaveRequestModal({ soldiers, from, to, onClose }: Props
             <div className="text-4xl mb-3">✅</div>
             <h2 className="text-lg font-bold text-slate-800 mb-2">הבקשה נשלחה!</h2>
             <p className="text-slate-500 text-sm mb-6">הבקשה תועבר לאחראי שבצ&quot;ק לאישור.</p>
-            <button
-              onClick={onClose}
-              className="bg-navy text-white rounded-xl px-6 py-2 font-semibold"
-            >
+            <button onClick={onClose} className="bg-navy text-white rounded-xl px-6 py-2 font-semibold">
               סגור
             </button>
           </div>
@@ -115,34 +116,60 @@ export default function LeaveRequestModal({ soldiers, from, to, onClose }: Props
               )}
             </div>
 
-            {/* Day selector */}
-            <div className="mb-5">
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                בחר ימי יציאה ({selectedDays.size} נבחרו)
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {days.map(d => {
-                  const selected = selectedDays.has(d)
-                  return (
-                    <button
-                      key={d}
-                      onClick={() => toggleDay(d)}
-                      className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition ${
-                        selected
-                          ? 'bg-navy text-white border-navy'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-navy'
-                      }`}
-                    >
-                      {dayLabel(d)}
-                    </button>
-                  )
-                })}
+            {/* Quota counter + warning */}
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-semibold text-slate-700">בחר ימי יציאה</label>
+              {maxDays > 0 && (
+                <span className={`text-sm font-bold px-2 py-0.5 rounded-full ${
+                  overQuota ? 'bg-red-100 text-red-700' : count > 0 ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {count} / {maxDays}
+                </span>
+              )}
+            </div>
+
+            {/* Over-quota warning */}
+            {overQuota && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl px-3 py-2 mb-3">
+                ⚠️ שים לב: אתה מבקש יותר ימים מהמכסה המוגדרת ({maxDays} ימים). ניתן לשלוח בכל זאת, אך הבקשה תועבר לבדיקת האחראי.
               </div>
+            )}
+
+            {/* Day selector */}
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {days.map(d => {
+                const selected = selectedDays.has(d)
+                return (
+                  <button
+                    key={d}
+                    onClick={() => toggleDay(d)}
+                    className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition ${
+                      selected
+                        ? 'bg-navy text-white border-navy'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-navy'
+                    }`}
+                  >
+                    {dayLabel(d)}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Free-text note */}
+            <div className="mb-5">
+              <label className="block text-sm font-semibold text-slate-700 mb-1">הערה (אופציונלי)</label>
+              <textarea
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                placeholder="לדוגמה: חתונה משפחתית, צריך לחזור עד 18:00..."
+                rows={2}
+                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-navy resize-none"
+              />
             </div>
 
             <button
               onClick={submit}
-              disabled={!soldierId || selectedDays.size === 0 || submitting}
+              disabled={!soldierId || count === 0 || submitting}
               className="w-full bg-navy text-white rounded-xl py-3 font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {submitting ? 'שולח...' : 'שלח בקשה'}

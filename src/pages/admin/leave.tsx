@@ -12,6 +12,7 @@ interface SurveySettings {
   is_open: boolean
   from: string
   to: string
+  max_days: number
 }
 
 function next14Days(): string[] {
@@ -40,21 +41,22 @@ export default function AdminLeavePage() {
   const [survey, setSurvey] = useState<SurveySettings | null>(null)
   const [draftFrom, setDraftFrom] = useState('')
   const [draftTo, setDraftTo] = useState('')
+  const [draftMaxDays, setDraftMaxDays] = useState(3)
 
   useEffect(() => {
     return onSnapshot(doc(db, 'settings', 'leave_survey'), snap => {
       if (snap.exists()) setSurvey(snap.data() as SurveySettings)
-      else setSurvey({ is_open: false, from: '', to: '' })
+      else setSurvey({ is_open: false, from: '', to: '', max_days: 3 })
     })
   }, [])
 
   async function openSurvey() {
     if (!draftFrom || !draftTo) return
-    await setDoc(doc(db, 'settings', 'leave_survey'), { is_open: true, from: draftFrom, to: draftTo })
+    await setDoc(doc(db, 'settings', 'leave_survey'), { is_open: true, from: draftFrom, to: draftTo, max_days: draftMaxDays })
   }
 
   async function closeSurvey() {
-    await setDoc(doc(db, 'settings', 'leave_survey'), { is_open: false, from: survey?.from ?? '', to: survey?.to ?? '' })
+    await setDoc(doc(db, 'settings', 'leave_survey'), { is_open: false, from: survey?.from ?? '', to: survey?.to ?? '', max_days: survey?.max_days ?? 3 })
   }
 
   const sorted = useMemo(() =>
@@ -109,12 +111,15 @@ export default function AdminLeavePage() {
             {survey?.is_open ? `✅ סקר פתוח: ${survey.from} – ${survey.to}` : '⛔ סקר יציאות סגור'}
           </span>
           {survey?.is_open ? (
-            <button
-              onClick={closeSurvey}
-              className="bg-red-100 text-red-700 border border-red-200 rounded-lg px-3 py-1.5 text-sm font-semibold hover:bg-red-200 transition"
-            >
-              סגור סקר
-            </button>
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={closeSurvey}
+                className="bg-red-100 text-red-700 border border-red-200 rounded-lg px-3 py-1.5 text-sm font-semibold hover:bg-red-200 transition"
+              >
+                סגור סקר
+              </button>
+              <span className="text-sm text-green-700">מכסה: עד {survey.max_days} ימים לאיש</span>
+            </div>
           ) : (
             <div className="flex gap-2 items-center flex-wrap">
               <input
@@ -131,6 +136,18 @@ export default function AdminLeavePage() {
                 min={draftFrom}
                 className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
               />
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-500 text-sm">מכסה:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={draftMaxDays}
+                  onChange={e => setDraftMaxDays(Number(e.target.value))}
+                  className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-16 text-center"
+                />
+                <span className="text-slate-500 text-sm">ימים</span>
+              </div>
               <button
                 onClick={openSurvey}
                 disabled={!draftFrom || !draftTo}

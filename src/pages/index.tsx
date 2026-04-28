@@ -11,7 +11,7 @@ import { schedulesRef } from '@/lib/firestore'
 import { db } from '@/lib/firebase'
 import type { Schedule } from '@/types'
 
-interface SurveySettings { is_open: boolean; from: string; to: string }
+interface SurveySettings { is_open: boolean; from: string; to: string; max_days: number }
 
 export default function HomePage() {
   const [schedules, setSchedules] = useState<Schedule[]>([])
@@ -210,6 +210,7 @@ export default function HomePage() {
           soldiers={soldiers}
           from={survey.from}
           to={survey.to}
+          maxDays={survey.max_days ?? 0}
           onClose={() => setShowLeave(false)}
         />
       )}

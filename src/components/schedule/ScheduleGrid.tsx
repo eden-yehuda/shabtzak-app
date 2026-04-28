@@ -18,14 +18,15 @@ interface Props {
 const COLUMN_ORDER = ['כ"כ א', 'כ"כ ב', 'אחורית', 'ש"ג', 'של"ז']
 
 // Colors per column type: [header bg+text, card bg, card border, card text]
-const COL_STYLE: Record<string, { head: string; card: string; border: string; text: string; mine: string }> = {
-  'כ"כ א':  { head: 'bg-blue-600 text-white',   card: 'bg-blue-50',   border: 'border-blue-300',   text: 'text-blue-900',   mine: 'bg-blue-700 text-white' },
-  'כ"כ ב':  { head: 'bg-indigo-600 text-white',  card: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-900', mine: 'bg-indigo-700 text-white' },
-  'אחורית': { head: 'bg-amber-600 text-white',   card: 'bg-amber-50',  border: 'border-amber-300',  text: 'text-amber-900',  mine: 'bg-amber-600 text-white' },
-  'ש"ג':    { head: 'bg-emerald-600 text-white', card: 'bg-emerald-50',border: 'border-emerald-300',text: 'text-emerald-900',mine: 'bg-emerald-700 text-white' },
-  'של"ז':   { head: 'bg-violet-600 text-white',  card: 'bg-violet-50', border: 'border-violet-300', text: 'text-violet-900', mine: 'bg-violet-700 text-white' },
+// "Ash" palette — muted, unified family, same L/S, only hue shifts
+const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: string; cardBorder: string; cardText: string; mineBg: string }> = {
+  'כ"כ א':  { headBg: '#516B85', headText: '#fff', cardBg: '#EEF2F7', cardBorder: '#C4D3E3', cardText: '#1E3550', mineBg: '#3A5470' },
+  'כ"כ ב':  { headBg: '#40787A', headText: '#fff', cardBg: '#EAF4F4', cardBorder: '#B5D5D5', cardText: '#153A3A', mineBg: '#2E6062' },
+  'אחורית': { headBg: '#7A6652', headText: '#fff', cardBg: '#F4EFE7', cardBorder: '#D8CBBA', cardText: '#3D2E18', mineBg: '#61503E' },
+  'ש"ג':    { headBg: '#4A7A5E', headText: '#fff', cardBg: '#EAF3EE', cardBorder: '#B8D5C5', cardText: '#1A3828', mineBg: '#365E48' },
+  'של"ז':   { headBg: '#635E88', headText: '#fff', cardBg: '#EDEAF6', cardBorder: '#C5C0DC', cardText: '#2A2448', mineBg: '#4D4870' },
 }
-const DEFAULT_COL_STYLE = { head: 'bg-slate-600 text-white', card: 'bg-slate-50', border: 'border-slate-300', text: 'text-slate-900', mine: 'bg-slate-700 text-white' }
+const DEFAULT_COL_STYLE = { headBg: '#556070', headText: '#fff', cardBg: '#EEF0F2', cardBorder: '#C8CDD5', cardText: '#222D38', mineBg: '#3A4755' }
 
 // Military day: 02:00–01:59 (24 rows starting at 02:00)
 const DAY_START_HOUR = 2
@@ -272,7 +273,7 @@ export default function ScheduleGrid({
                   {columns.map(col => {
                     const cs = COL_STYLE[col] ?? DEFAULT_COL_STYLE
                     return (
-                      <th key={col} className={`border border-slate-300 px-1 py-1.5 text-center text-xs font-bold ${cs.head}`}>{col}</th>
+                      <th key={col} className="border border-slate-300 px-1 py-1.5 text-center text-xs font-bold" style={{ backgroundColor: cs.headBg, color: cs.headText }}>{col}</th>
                     )
                   })}
                 </tr>
@@ -363,15 +364,20 @@ export default function ScheduleGrid({
                           const missing = task.required_people_count - assigned.length
                           const commanderMissing = task.requires_commander && !assigned.some(s => s.is_commander)
 
-                          const cardClass = task.id === selectedTaskId
-                            ? 'bg-sky-100 border-sky-400 ring-2 ring-sky-400'
-                            : isMine
-                            ? cs.mine
-                            : commanderMissing
-                            ? 'bg-red-100 border-red-400 text-red-900'
-                            : missing > 0
-                            ? 'bg-orange-100 border-orange-400 text-orange-900'
-                            : `${cs.card} ${cs.border} ${cs.text}`
+                          const isSelected = task.id === selectedTaskId
+                          let cardExtraClass = ''
+                          let cardStyle: React.CSSProperties = {}
+                          if (isSelected) {
+                            cardExtraClass = 'bg-sky-100 border-sky-400 ring-2 ring-sky-400'
+                          } else if (commanderMissing) {
+                            cardExtraClass = 'bg-red-100 border-red-400 text-red-900'
+                          } else if (missing > 0) {
+                            cardExtraClass = 'bg-orange-100 border-orange-400 text-orange-900'
+                          } else if (isMine) {
+                            cardStyle = { backgroundColor: cs.mineBg, borderColor: cs.mineBg, color: '#fff' }
+                          } else {
+                            cardStyle = { backgroundColor: cs.cardBg, borderColor: cs.cardBorder, color: cs.cardText }
+                          }
 
                           return (
                             <td
@@ -380,7 +386,7 @@ export default function ScheduleGrid({
                               className={`border border-slate-200 p-1 align-top h-8 ${onSelectTask ? 'cursor-pointer' : ''}`}
                               onClick={onSelectTask ? () => onSelectTask(task.id) : undefined}
                             >
-                              <div className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition ${cardClass}`}>
+                              <div className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition ${cardExtraClass}`} style={cardStyle}>
                               <div className="space-y-0.5">
                                 <div className={`text-[9px] mb-0.5 opacity-60`}>{timeLabel}</div>
                                 {assigned.map((s, idx) => (
