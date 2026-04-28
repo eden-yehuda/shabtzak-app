@@ -214,7 +214,6 @@ export default function ScheduleGrid({
         // soldierHome: rows HOME_LEAVE_START_ROW..23 are "בית"
         // soldierReturning: rows 0..HOME_LEAVE_START_ROW-1 are still "בית"
         const homeRowStart = soldierHome ? HOME_LEAVE_START_ROW : -1
-        const homeRowEnd = soldierHome ? HOURS_PER_DAY - 1 : -1 // inclusive
         const returnRowEnd = soldierReturning ? HOME_LEAVE_START_ROW - 1 : -1 // rows 0..returnRowEnd
 
         const isCollapsed = collapsedDays.has(day)
