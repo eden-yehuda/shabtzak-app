@@ -10,6 +10,7 @@ import type { Schedule } from '@/types'
 
 export default function HomePage() {
   const [schedules, setSchedules] = useState<Schedule[]>([])
+  const [schedulesLoading, setSchedulesLoading] = useState(true)
   const [scheduleIdx, setScheduleIdx] = useState(0)
   const soldiers = useSoldiers()
   const finalLeave = useFinalLeave()
@@ -38,6 +39,7 @@ export default function HomePage() {
         end_datetime: d.data().end_datetime?.toDate(),
       } as Schedule))
       setSchedules(all.filter(s => s.status === 'published'))
+      setSchedulesLoading(false)
     })
   }, [])
 
@@ -151,7 +153,13 @@ export default function HomePage() {
         </div>
       )}
 
-      {schedules.length === 0
+      {schedulesLoading
+        ? (
+          <div className="flex justify-center py-16">
+            <div className="w-8 h-8 border-4 border-slate-200 border-t-navy rounded-full animate-spin" />
+          </div>
+        )
+        : schedules.length === 0
         ? <p className="text-slate-400 text-center py-12">{'אין שבצ"ק פעיל'}</p>
         : <ScheduleGrid
             tasks={visibleTasks}

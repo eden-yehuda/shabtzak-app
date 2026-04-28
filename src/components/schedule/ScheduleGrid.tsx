@@ -237,7 +237,7 @@ export default function ScheduleGrid({
                               {assigned.map((s, idx) => (
                                 <div
                                   key={s.id}
-                                  className={`text-xs leading-snug ${idx === 0 ? 'font-bold' : ''}`}
+                                  className={`text-xs leading-snug ${idx === 0 ? 'font-bold' : ''} ${isMine ? 'text-white' : 'text-slate-800'}`}
                                 >
                                   {s.full_name}
                                   {builderMode && onRemoveSoldier && (
