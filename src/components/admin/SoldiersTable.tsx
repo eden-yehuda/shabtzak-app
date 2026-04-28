@@ -1,12 +1,33 @@
 import { useState } from 'react'
-import { doc, updateDoc } from 'firebase/firestore'
+import { doc, updateDoc, addDoc, collection } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import type { Soldier } from '@/types'
 
 interface Props { soldiers: Soldier[] }
 
+const EMPTY_NEW = { full_name: '', team: '', is_commander: false, notes: '' }
+
 export default function SoldiersTable({ soldiers }: Props) {
   const [editing, setEditing] = useState<Record<string, Partial<Soldier>>>({})
+  const [adding, setAdding] = useState(false)
+  const [newSoldier, setNewSoldier] = useState(EMPTY_NEW)
+  const [saving, setSaving] = useState(false)
+
+  async function addSoldier() {
+    if (!newSoldier.full_name.trim()) return
+    setSaving(true)
+    await addDoc(collection(db, 'soldiers'), {
+      full_name: newSoldier.full_name.trim(),
+      team: newSoldier.team.trim(),
+      is_commander: newSoldier.is_commander,
+      notes: newSoldier.notes.trim(),
+      is_active: true,
+      fixed_home_ranges: [],
+    })
+    setNewSoldier(EMPTY_NEW)
+    setAdding(false)
+    setSaving(false)
+  }
 
   function patch(id: string, field: keyof Soldier, value: unknown) {
     setEditing(e => ({ ...e, [id]: { ...e[id], [field]: value } }))
@@ -41,6 +62,71 @@ export default function SoldiersTable({ soldiers }: Props) {
   )
 
   return (
+    <div>
+      {/* Add soldier */}
+      {!adding ? (
+        <button
+          onClick={() => setAdding(true)}
+          className="mb-4 bg-navy text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-navy-light transition"
+        >
+          + הוסף חייל
+        </button>
+      ) : (
+        <div className="bg-white rounded-xl p-4 shadow-sm mb-4 flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">שם מלא *</label>
+            <input
+              value={newSoldier.full_name}
+              onChange={e => setNewSoldier(n => ({ ...n, full_name: e.target.value }))}
+              className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-40"
+              placeholder="שם פרטי ומשפחה"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">צוות</label>
+            <input
+              value={newSoldier.team}
+              onChange={e => setNewSoldier(n => ({ ...n, team: e.target.value }))}
+              className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-28"
+              placeholder="צוות א׳..."
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">הערות</label>
+            <input
+              value={newSoldier.notes}
+              onChange={e => setNewSoldier(n => ({ ...n, notes: e.target.value }))}
+              className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-40"
+              placeholder="הערה..."
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm pb-1.5">
+            <input
+              type="checkbox"
+              checked={newSoldier.is_commander}
+              onChange={e => setNewSoldier(n => ({ ...n, is_commander: e.target.checked }))}
+              className="w-4 h-4"
+            />
+            מפקד
+          </label>
+          <div className="flex gap-2 pb-1.5">
+            <button
+              onClick={addSoldier}
+              disabled={!newSoldier.full_name.trim() || saving}
+              className="bg-navy text-white rounded-xl px-4 py-1.5 text-sm font-semibold disabled:opacity-40"
+            >
+              {saving ? 'שומר...' : 'הוסף'}
+            </button>
+            <button
+              onClick={() => { setAdding(false); setNewSoldier(EMPTY_NEW) }}
+              className="text-slate-500 text-sm px-3 py-1.5 rounded-xl hover:bg-slate-100"
+            >
+              ביטול
+            </button>
+          </div>
+        </div>
+      )}
+
     <div className="overflow-x-auto">
       <table className="w-full text-sm border-collapse">
         <thead>
@@ -113,6 +199,7 @@ export default function SoldiersTable({ soldiers }: Props) {
           })}
         </tbody>
       </table>
+    </div>
     </div>
   )
 }

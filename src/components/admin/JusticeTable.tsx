@@ -8,18 +8,26 @@ interface Props {
   soldiers: Soldier[]
   taskTypes: TaskType[]
   filter: 'all' | 'commanders' | 'soldiers'
+  taskTypeFilter: string // '' = all task types
 }
 
-export default function JusticeTable({ tasks, assignments, soldiers, taskTypes, filter }: Props) {
-  const { rows, columns } = useMemo(() => {
-    const usedTypeNames = Array.from(new Set(tasks.map(t => t.task_type)))
-    const columns = taskTypes
-      .filter(tt => usedTypeNames.includes(tt.name))
-      .sort((a, b) => {
-        if (a.is_emphasized && !b.is_emphasized) return -1
-        if (!a.is_emphasized && b.is_emphasized) return 1
-        return a.name.localeCompare(b.name, 'he')
-      })
+const DAY_NAMES = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
+
+function formatTaskHeader(task: Task) {
+  const d = task.start_datetime
+  const day = DAY_NAMES[d.getDay()]
+  const time = `${String(d.getHours()).padStart(2, '0')}:00`
+  return { day, time, label: `${day} ${time}` }
+}
+
+export default function JusticeTable({ tasks, assignments, soldiers, taskTypes, filter, taskTypeFilter }: Props) {
+  const { rows, columns, typeMap } = useMemo(() => {
+    const typeMap: Record<string, TaskType> = {}
+    for (const tt of taskTypes) typeMap[tt.name] = tt
+
+    const filteredTasks = (taskTypeFilter ? tasks.filter(t => t.task_type === taskTypeFilter) : tasks)
+      .slice()
+      .sort((a, b) => a.start_datetime.getTime() - b.start_datetime.getTime())
 
     const filteredSoldiers = soldiers.filter(s => {
       if (!s.is_active) return false
@@ -29,92 +37,90 @@ export default function JusticeTable({ tasks, assignments, soldiers, taskTypes, 
     })
 
     const rows = filteredSoldiers.map(s => {
-      const myAssignments = assignments.filter(a => a.soldier_id === s.id)
-      const myTasks = myAssignments
-        .map(a => tasks.find(t => t.id === a.task_id))
-        .filter((t): t is Task => !!t)
-
-      const hoursByType: Record<string, number> = {}
-      for (const col of columns) {
-        const typeTasks = myTasks.filter(t => t.task_type === col.name)
-        hoursByType[col.name] = typeTasks.reduce(
-          (sum, t) => sum + taskDurationHours(t.start_datetime, t.end_datetime), 0
-        )
+      const assignedTaskIds = new Set(
+        assignments.filter(a => a.soldier_id === s.id).map(a => a.task_id)
+      )
+      const hoursByTask: Record<string, number> = {}
+      let totalHours = 0
+      for (const t of filteredTasks) {
+        if (assignedTaskIds.has(t.id)) {
+          const h = taskDurationHours(t.start_datetime, t.end_datetime)
+          hoursByTask[t.id] = h
+          totalHours += h
+        }
       }
-
-      const totalHours = Object.values(hoursByType).reduce((a, b) => a + b, 0)
-      const totalTasks = myTasks.length
-
-      return { soldier: s, hoursByType, totalHours, totalTasks }
+      return { soldier: s, hoursByTask, totalHours }
     }).sort((a, b) => b.totalHours - a.totalHours)
 
-    return { rows, columns }
-  }, [tasks, assignments, soldiers, taskTypes, filter])
+    return { rows, columns: filteredTasks, typeMap }
+  }, [tasks, assignments, soldiers, taskTypes, filter, taskTypeFilter])
 
   const avgHours = rows.length > 0
     ? rows.reduce((sum, r) => sum + r.totalHours, 0) / rows.length
     : 0
 
+  if (columns.length === 0) {
+    return <p className="text-slate-400 text-center py-8">אין נתונים</p>
+  }
+
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm border-collapse">
+      <table className="text-sm border-collapse" style={{ minWidth: 'max-content' }}>
         <thead>
           <tr className="bg-slate-50 text-right">
-            <th className="px-3 py-2 font-semibold sticky right-0 bg-slate-50">שם</th>
-            {columns.map(col => (
-              <th
-                key={col.name}
-                className={`px-3 py-2 font-semibold text-center ${col.is_emphasized ? 'bg-blue-50' : ''}`}
-              >
-                <div className="flex flex-col items-center gap-0.5">
-                  <span style={{ color: col.color }}>●</span>
-                  <span>{col.name}</span>
-                </div>
-              </th>
-            ))}
-            <th className="px-3 py-2 font-semibold text-center">סה&quot;כ שעות</th>
-            <th className="px-3 py-2 font-semibold text-center">משימות</th>
+            <th className="px-3 py-2 font-semibold sticky right-0 bg-slate-50 z-10 border-b border-slate-200">שם</th>
+            {columns.map(task => {
+              const tt = typeMap[task.task_type]
+              const { day, time } = formatTaskHeader(task)
+              return (
+                <th
+                  key={task.id}
+                  className={`px-2 py-2 font-semibold text-center border-b border-slate-200 ${tt?.is_emphasized ? 'bg-blue-50' : ''}`}
+                >
+                  <div className="flex flex-col items-center gap-0.5 min-w-[52px]">
+                    {tt && <span style={{ color: tt.color }} className="text-[10px]">● {task.task_type}</span>}
+                    <span className="text-xs">{day}</span>
+                    <span className="text-[10px] text-slate-500">{time}</span>
+                  </div>
+                </th>
+              )
+            })}
+            <th className="px-3 py-2 font-semibold text-center border-b border-slate-200">סה&quot;כ ש׳</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ soldier, hoursByType, totalHours, totalTasks }) => {
+          {rows.map(({ soldier, hoursByTask, totalHours }) => {
             const isHigh = avgHours > 0 && totalHours > avgHours * 1.2
-            const isLow = avgHours > 0 && totalHours < avgHours * 0.8
+            const isLow = avgHours > 0 && totalHours > 0 && totalHours < avgHours * 0.8
             return (
               <tr
                 key={soldier.id}
-                className={`border-b border-slate-100 ${
-                  isHigh ? 'bg-red-50' : isLow ? 'bg-green-50' : 'hover:bg-slate-50'
-                }`}
+                className={`border-b border-slate-100 ${isHigh ? 'bg-red-50' : isLow ? 'bg-green-50' : 'hover:bg-slate-50'}`}
               >
-                <td className={`px-3 py-2 font-medium sticky right-0 ${
+                <td className={`px-3 py-2 font-medium sticky right-0 z-10 whitespace-nowrap border-l border-slate-200 ${
                   isHigh ? 'bg-red-50' : isLow ? 'bg-green-50' : 'bg-white'
                 }`}>
                   {soldier.full_name}
                   {soldier.is_commander && <span className="text-xs text-navy mr-1">★</span>}
                 </td>
-                {columns.map(col => (
-                  <td
-                    key={col.name}
-                    className={`px-3 py-2 text-center ${col.is_emphasized ? 'bg-blue-50 font-semibold' : ''}`}
-                  >
-                    {hoursByType[col.name] > 0 ? `${hoursByType[col.name]}h` : '—'}
-                  </td>
-                ))}
+                {columns.map(task => {
+                  const h = hoursByTask[task.id]
+                  const tt = typeMap[task.task_type]
+                  return (
+                    <td
+                      key={task.id}
+                      className={`px-2 py-2 text-center ${tt?.is_emphasized ? 'bg-blue-50' : ''}`}
+                    >
+                      {h ? <span className="font-semibold text-navy">{h}h</span> : <span className="text-slate-300">—</span>}
+                    </td>
+                  )
+                })}
                 <td className="px-3 py-2 text-center font-bold">
                   {totalHours > 0 ? `${totalHours}h` : '—'}
                 </td>
-                <td className="px-3 py-2 text-center text-slate-500">{totalTasks}</td>
               </tr>
             )
           })}
-          {rows.length === 0 && (
-            <tr>
-              <td colSpan={columns.length + 3} className="text-center py-8 text-slate-400">
-                אין נתונים
-              </td>
-            </tr>
-          )}
         </tbody>
       </table>
     </div>

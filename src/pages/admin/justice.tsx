@@ -13,6 +13,7 @@ export default function JusticePage() {
   const [selectedId, setSelectedId] = useState<string>('')
   const [taskTypes, setTaskTypes] = useState<TaskType[]>([])
   const [filter, setFilter] = useState<'all' | 'commanders' | 'soldiers'>('all')
+  const [taskTypeFilter, setTaskTypeFilter] = useState<string>('')
 
   useEffect(() => {
     return onSnapshot(query(schedulesRef(), orderBy('start_datetime', 'desc')), snap => {
@@ -36,9 +37,11 @@ export default function JusticePage() {
 
   const { tasks, assignments } = useScheduleTasks(selectedId || null)
 
+  const usedTaskTypes = Array.from(new Set(tasks.map(t => t.task_type))).sort()
+
   return (
     <AdminLayout>
-      <div className="flex flex-wrap gap-3 items-center mb-6">
+      <div className="flex flex-wrap gap-3 items-center mb-4">
         <h1 className="text-xl font-bold text-navy">טבלת צדק</h1>
         <select
           value={selectedId}
@@ -47,21 +50,41 @@ export default function JusticePage() {
         >
           {schedules.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <div className="flex gap-1">
-          {(['all', 'commanders', 'soldiers'] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-sm ${filter === f ? 'bg-navy text-white' : 'bg-slate-100'}`}>
-              {f === 'all' ? 'הכל' : f === 'commanders' ? 'מפקדים' : 'לוחמים'}
-            </button>
-          ))}
-        </div>
       </div>
+
+      {/* Soldier type filter */}
+      <div className="flex flex-wrap gap-2 mb-3">
+        {(['all', 'commanders', 'soldiers'] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-3 py-1.5 rounded-lg text-sm ${filter === f ? 'bg-navy text-white' : 'bg-slate-100 text-slate-700'}`}>
+            {f === 'all' ? 'כולם' : f === 'commanders' ? 'מפקדים' : 'לוחמים'}
+          </button>
+        ))}
+        <span className="w-px bg-slate-300 mx-1 self-stretch" />
+        <button
+          onClick={() => setTaskTypeFilter('')}
+          className={`px-3 py-1.5 rounded-lg text-sm ${taskTypeFilter === '' ? 'bg-navy text-white' : 'bg-slate-100 text-slate-700'}`}
+        >
+          כל המשימות
+        </button>
+        {usedTaskTypes.map(tt => (
+          <button
+            key={tt}
+            onClick={() => setTaskTypeFilter(tt)}
+            className={`px-3 py-1.5 rounded-lg text-sm ${taskTypeFilter === tt ? 'bg-navy text-white' : 'bg-slate-100 text-slate-700'}`}
+          >
+            {tt}
+          </button>
+        ))}
+      </div>
+
       <JusticeTable
         tasks={tasks}
         assignments={assignments}
         soldiers={soldiers}
         taskTypes={taskTypes}
         filter={filter}
+        taskTypeFilter={taskTypeFilter}
       />
     </AdminLayout>
   )
