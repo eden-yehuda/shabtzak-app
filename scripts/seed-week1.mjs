@@ -4,7 +4,7 @@
  */
 import { initializeApp } from 'firebase/app'
 import {
-  getFirestore, collection, addDoc, getDocs, deleteDoc, doc, writeBatch, Timestamp
+  getFirestore, collection, addDoc, getDocs, deleteDoc, writeBatch, Timestamp, query, where
 } from 'firebase/firestore'
 
 const firebaseConfig = {
@@ -19,10 +19,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig)
 const db = getFirestore(app)
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
 function ts(dateStr, hour, min = 0) {
-  // dateStr = 'YYYY-MM-DD', returns Timestamp at that time (local Israel ≈ UTC+3)
   const d = new Date(`${dateStr}T${String(hour).padStart(2,'0')}:${String(min).padStart(2,'0')}:00+03:00`)
   return Timestamp.fromDate(d)
 }
@@ -42,9 +39,31 @@ async function clearCollection(colName) {
   console.log(`  cleared ${snap.size} docs from ${colName}`)
 }
 
-// ── Data ──────────────────────────────────────────────────────────────────────
+async function clearBySchedule(scheduleId) {
+  // Clear tasks belonging to this schedule
+  const taskSnap = await getDocs(query(collection(db, 'tasks'), where('schedule_id', '==', scheduleId)))
+  if (!taskSnap.empty) {
+    const taskIds = taskSnap.docs.map(d => d.id)
+    // Clear assignments for those tasks
+    const chunks = []
+    for (let i = 0; i < taskIds.length; i += 30) chunks.push(taskIds.slice(i, i + 30))
+    for (const chunk of chunks) {
+      const aSnap = await getDocs(query(collection(db, 'assignments'), where('task_id', 'in', chunk)))
+      if (!aSnap.empty) {
+        const b = writeBatch(db)
+        aSnap.docs.forEach(d => b.delete(d.ref))
+        await b.commit()
+      }
+    }
+    const b = writeBatch(db)
+    taskSnap.docs.forEach(d => b.delete(d.ref))
+    await b.commit()
+    console.log(`  cleared ${taskSnap.size} tasks`)
+  }
+}
 
-// מצבה order — commanders flagged based on who leads shifts in שבצ"ק שבוע 1
+// ── מצבה (roster order) ──────────────────────────────────────────────────────
+// is_commander = leads shifts as first-listed in כ"כ
 const SOLDIERS = [
   { full_name: 'אוראל אפנזר',   team: 'א', is_active: true, is_commander: true,  notes: '' },
   { full_name: 'יהונתן בוצר',   team: 'א', is_active: true, is_commander: true,  notes: '' },
@@ -68,84 +87,88 @@ const SOLDIERS = [
   { full_name: 'אילון אומן',     team: 'א', is_active: true, is_commander: false, notes: '' },
   { full_name: 'יגל משה',        team: 'ב', is_active: true, is_commander: false, notes: '' },
   { full_name: 'מיתר לזימי',    team: 'א', is_active: true, is_commander: false, notes: '' },
-  { full_name: 'אמיתי ברמה',    team: 'ב', is_active: true, is_commander: false, notes: 'שלישי רביעי' },
+  { full_name: 'אמיתי ברמה',    team: 'ב', is_active: true, is_commander: false, notes: '' },
   { full_name: 'טל סימקו',       team: 'א', is_active: true, is_commander: false, notes: '' },
 ]
 
-// כ"כ = כוח כוננות, 12h shifts. ש"ג = שמירה, 4h. אחורית 4h. של"ז ~6h.
-// Format: { date, startH, endH (next day if < startH), type, soldiers[] }
-const KK_A = 'כ"כ א (חווה 7)'
-const KK_B = 'כ"כ ב (חווה 7)'
+// Column names matching Excel (no parentheses)
+const KK_A = 'כ"כ א'
+const KK_B = 'כ"כ ב'
 const SHG  = 'ש"ג'
 const ACHR = 'אחורית'
 const SHLZ = 'של"ז'
 
-// Helper: endDate = same day unless endH < startH (crosses midnight)
-function taskDef(date, startH, endH, type, soldiers, requiresCommander = false, requiredPeople = null) {
-  const endDate = endH <= startH ? nextDay(date) : date
-  return { date, startH, endH, endDate, type, soldiers, requiresCommander, requiredPeople: requiredPeople ?? soldiers.length }
+// soldiers list: index 0 = task commander (displayed bold)
+function task(date, startH, endH, type, soldiers, requiresCommander = false) {
+  return { date, startH, endH, type, soldiers, requiresCommander, requiredPeople: soldiers.length }
 }
 
 const TASKS = [
-  // ── יום שלישי 28.4.26 ────────────────────────────────────────────────────
-  taskDef('2026-04-28',  8, 14, SHLZ,  ['חגי פייגנבום']),
-  taskDef('2026-04-28', 11, 14, SHG,   ['עדן יהודה']),
-  taskDef('2026-04-28', 14,  2, KK_A,  ['דביר משה','עידן אלמו','אמיתי ברמה','יואב חדד','אנדריי טיאן'], true, 5),
-  taskDef('2026-04-28', 14,  2, KK_B,  ['רפאל אלקיים','יגל משה','טל סימקו','אחיה בכרך','נתן לדקוב'], true, 5),
-  taskDef('2026-04-28', 23,  3, ACHR,  ['יהונתן בוצר']),
+  // ── שלישי 28.4.26 ──────────────────────────────────────────────────────────
+  task('2026-04-28',  8, 14, SHLZ,  ['חגי פייגנבום']),
+  task('2026-04-28', 11, 14, SHG,   ['עדן יהודה']),
+  task('2026-04-28', 14,  2, KK_A,  ['דביר משה','עידן אלמו','אמיתי ברמה','יואב חדד','אנדריי טיאן'], true),
+  task('2026-04-28', 14,  2, KK_B,  ['רפאל אלקיים','יגל משה','טל סימקו','אחיה בכרך','נתן לדקוב'], true),
+  task('2026-04-28', 23,  3, ACHR,  ['יהונתן בוצר']),
 
-  // ── יום רביעי 29.4.26 ────────────────────────────────────────────────────
-  taskDef('2026-04-29',  2, 14, KK_A,  ['רפאל אלקיים','ירין צור','טל סימקו','אחיה בכרך','נתן לדקוב'], true, 5),
-  taskDef('2026-04-29',  2, 14, KK_B,  ['דביר משה','עידן אלמו','אמיתי ברמה','יואב חדד','אנדריי טיאן'], true, 5),
-  taskDef('2026-04-29',  3,  7, SHG,   ['עדן יהודה']),
-  taskDef('2026-04-29', 14,  2, KK_A,  ['דביר משה','מיתר לזימי','עידן אלמו','יואב חדד','זיו צארום'], true, 5),
-  taskDef('2026-04-29', 14,  2, KK_B,  ['רפאל אלקיים','ירין צור','טל סימקו','עדן יהודה','נתן לדקוב'], true, 5),
+  // ── רביעי 29.4.26 ──────────────────────────────────────────────────────────
+  task('2026-04-29',  2, 14, KK_A,  ['רפאל אלקיים','ירין צור','טל סימקו','אחיה בכרך','נתן לדקוב'], true),
+  task('2026-04-29',  2, 14, KK_B,  ['דביר משה','עידן אלמו','אמיתי ברמה','יואב חדד','אנדריי טיאן'], true),
+  task('2026-04-29',  3,  7, SHG,   ['עדן יהודה']),
+  task('2026-04-29', 14,  2, KK_A,  ['דביר משה','מיתר לזימי','עידן אלמו','יואב חדד','זיו צארום'], true),
+  task('2026-04-29', 14,  2, KK_B,  ['רפאל אלקיים','ירין צור','טל סימקו','עדן יהודה','נתן לדקוב'], true),
 
-  // ── יום חמישי 30.4.26 ────────────────────────────────────────────────────
-  taskDef('2026-04-30',  2, 14, KK_A,  ['אוראל אפנזר','ירין צור','טל סימקו','אנדריי טיאן','נתן לדקוב'], true, 5),
-  taskDef('2026-04-30',  2, 10, KK_B,  ['אופיר אלטמן','זיו צארום','מיתר לזימי','יואב חדד','עידן אלמו'], true, 5),
-  taskDef('2026-04-30',  3,  7, SHG,   ['עדן יהודה']),
-  taskDef('2026-04-30', 11, 15, SHG,   ['מאור לוי']),
-  taskDef('2026-04-30', 14,  2, KK_A,  ['אופיר אלטמן','זיו צארום','מיתר לזימי','יואב חדד','נתניאל לישה'], true, 5),
-  taskDef('2026-04-30', 15,  2, KK_B,  ['אוראל אפנזר','ירין צור','טל סימקו','לאון','מאור לוי'], true, 5),
+  // ── חמישי 30.4.26 ──────────────────────────────────────────────────────────
+  task('2026-04-30',  2, 14, KK_A,  ['אוראל אפנזר','ירין צור','טל סימקו','אנדריי טיאן','נתן לדקוב'], true),
+  task('2026-04-30',  2, 10, KK_B,  ['אופיר אלטמן','זיו צארום','מיתר לזימי','יואב חדד','עידן אלמו'], true),
+  task('2026-04-30',  3,  7, SHG,   ['עדן יהודה']),
+  task('2026-04-30', 11, 15, SHG,   ['מאור לוי']),
+  task('2026-04-30', 14,  2, KK_A,  ['אופיר אלטמן','זיו צארום','מיתר לזימי','יואב חדד','נתניאל לישה'], true),
+  task('2026-04-30', 15,  2, KK_B,  ['אוראל אפנזר','ירין צור','טל סימקו','לאון','מאור לוי'], true),
 
-  // ── יום שישי 1.5.26 ──────────────────────────────────────────────────────
-  taskDef('2026-05-01',  2, 14, KK_A,  ['אוראל אפנזר','ירין צור','טל סימקו','לאון','מאור לוי'], true, 5),
-  taskDef('2026-05-01',  2, 10, KK_B,  ['נתניאל לישה','מיתר לזימי','יואב חדד','זיו צארום','אופיר אלטמן'], true, 5),
-  taskDef('2026-05-01',  3,  7, SHG,   ['אנדריי טיאן']),
-  taskDef('2026-05-01',  7, 11, SHG,   ['נתן לדקוב']),
-  taskDef('2026-05-01', 14,  2, KK_A,  ['דביר משה','נתניאל לישה','מיתר לזימי','יואב חדד','עידן אלמו'], true, 5),
-  taskDef('2026-05-01', 14,  2, KK_B,  ['יהונתן בוצר','ירין צור','טל סימקו','מאור כליפה','חגי פייגנבום'], true, 5),
-  taskDef('2026-05-01', 23,  3, SHG,   ['לאון']),
+  // ── שישי 1.5.26 ────────────────────────────────────────────────────────────
+  task('2026-05-01',  2, 14, KK_A,  ['אוראל אפנזר','ירין צור','טל סימקו','לאון','מאור לוי'], true),
+  task('2026-05-01',  2, 10, KK_B,  ['נתניאל לישה','מיתר לזימי','יואב חדד','זיו צארום','אופיר אלטמן'], true),
+  task('2026-05-01',  3,  7, SHG,   ['אנדריי טיאן']),
+  task('2026-05-01',  7, 11, SHG,   ['נתן לדקוב']),
+  task('2026-05-01', 14,  2, KK_A,  ['דביר משה','נתניאל לישה','מיתר לזימי','יואב חדד','עידן אלמו'], true),
+  task('2026-05-01', 14,  2, KK_B,  ['יהונתן בוצר','ירין צור','טל סימקו','מאור כליפה','חגי פייגנבום'], true),
+  task('2026-05-01', 23,  3, SHG,   ['לאון']),
 
-  // ── שבת 2.5.26 ───────────────────────────────────────────────────────────
-  taskDef('2026-05-02',  2, 14, KK_A,  ['יהונתן בוצר','נתן לדקוב','אנדריי טיאן','מאור כליפה','חגי פייגנבום'], true, 5),
-  taskDef('2026-05-02',  2, 14, KK_B,  ['דביר משה','עידן אלמו','טל סימקו','מיתר לזימי','יואב חדד'], true, 5),
-  taskDef('2026-05-02', 14,  2, KK_A,  ['דביר משה','עידן אלמו','טל סימקו','מיתר לזימי','יואב חדד'], true, 5),
-  taskDef('2026-05-02', 14,  2, KK_B,  ['יהונתן בוצר','נתן לדקוב','אנדריי טיאן','מאור כליפה','חגי פייגנבום'], true, 5),
-  taskDef('2026-05-02', 15, 19, SHG,   ['לאון']),
+  // ── שבת 2.5.26 ─────────────────────────────────────────────────────────────
+  task('2026-05-02',  2, 14, KK_A,  ['יהונתן בוצר','נתן לדקוב','אנדריי טיאן','מאור כליפה','חגי פייגנבום'], true),
+  task('2026-05-02',  2, 14, KK_B,  ['דביר משה','עידן אלמו','טל סימקו','מיתר לזימי','יואב חדד'], true),
+  task('2026-05-02', 14,  2, KK_A,  ['דביר משה','עידן אלמו','טל סימקו','מיתר לזימי','יואב חדד'], true),
+  task('2026-05-02', 14,  2, KK_B,  ['יהונתן בוצר','נתן לדקוב','אנדריי טיאן','מאור כליפה','חגי פייגנבום'], true),
+  task('2026-05-02', 15, 19, SHG,   ['לאון']),
 ]
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log('🚀 Seeding Firestore for שבצ"ק שבוע 1...\n')
+  console.log('🚀 Seeding שבצ"ק שבוע 1...\n')
 
-  // 1. Soldiers
-  console.log('1. Clearing and re-creating soldiers...')
+  // 1. Soldiers — clear and recreate in מצבה order
+  console.log('1. Resetting soldiers...')
   await clearCollection('soldiers')
   const soldierIdMap = {}
   for (const s of SOLDIERS) {
-    const ref = await addDoc(collection(db, 'soldiers'), {
-      ...s,
-      fixed_home_ranges: [],
-    })
+    const ref = await addDoc(collection(db, 'soldiers'), { ...s, fixed_home_ranges: [] })
     soldierIdMap[s.full_name] = ref.id
   }
   console.log(`  created ${SOLDIERS.length} soldiers`)
 
-  // 2. Schedule
-  console.log('\n2. Creating schedule document...')
+  // 2. Clear old week-1 schedules
+  console.log('\n2. Clearing old schedules...')
+  const oldSnap = await getDocs(collection(db, 'schedules'))
+  for (const d of oldSnap.docs) {
+    await clearBySchedule(d.id)
+    await deleteDoc(d.ref)
+  }
+  console.log(`  cleared ${oldSnap.size} old schedules`)
+
+  // 3. Create schedule
+  console.log('\n3. Creating schedule...')
   const schedRef = await addDoc(collection(db, 'schedules'), {
     name: 'שבצ"ק שבוע 1 — 28.4–2.5.26',
     start_datetime: ts('2026-04-28', 14),
@@ -153,38 +176,34 @@ async function main() {
     status: 'published',
     created_by: 'seed',
   })
-  const scheduleId = schedRef.id
-  console.log(`  schedule id: ${scheduleId}`)
+  console.log(`  id: ${schedRef.id}`)
 
-  // 3. Tasks + Assignments
-  console.log('\n3. Creating tasks and assignments...')
-  let taskCount = 0
-  let assignCount = 0
+  // 4. Tasks + Assignments (with order field)
+  console.log('\n4. Creating tasks and assignments...')
+  let taskCount = 0, assignCount = 0
 
   for (const t of TASKS) {
-    const startTs = ts(t.date, t.startH)
     const endDate = t.endH < t.startH ? nextDay(t.date) : t.date
-    const endTs   = ts(endDate, t.endH)
-
     const taskRef = await addDoc(collection(db, 'tasks'), {
-      schedule_id: scheduleId,
+      schedule_id: schedRef.id,
       task_name: `${t.type} ${t.date}`,
       task_type: t.type,
       difficulty: t.type === KK_A || t.type === KK_B ? 'hard' : 'easy',
-      start_datetime: startTs,
-      end_datetime:   endTs,
+      start_datetime: ts(t.date, t.startH),
+      end_datetime:   ts(endDate, t.endH),
       required_people_count: t.requiredPeople,
       requires_commander: t.requiresCommander,
       notes: '',
     })
     taskCount++
 
-    for (const name of t.soldiers) {
-      const sid = soldierIdMap[name]
-      if (!sid) { console.warn(`  ⚠ soldier not found: ${name}`); continue }
+    for (let i = 0; i < t.soldiers.length; i++) {
+      const sid = soldierIdMap[t.soldiers[i]]
+      if (!sid) { console.warn(`  ⚠ not found: ${t.soldiers[i]}`); continue }
       await addDoc(collection(db, 'assignments'), {
         task_id: taskRef.id,
         soldier_id: sid,
+        order: i,   // 0 = task commander (displayed bold)
       })
       assignCount++
     }

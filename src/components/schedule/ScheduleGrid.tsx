@@ -13,7 +13,10 @@ interface Props {
   onRemoveSoldier?: (taskId: string, soldierId: string) => void
 }
 
-// Military day starts at 02:00
+// Fixed column order matching the original Excel
+const COLUMN_ORDER = ['אחורית', 'ש"ג', 'של"ז', 'כ"כ א', 'כ"כ ב']
+
+// Military day: 02:00–01:59 (24 rows starting at 02:00)
 const DAY_START_HOUR = 2
 const HOURS_PER_DAY = 24
 const DAY_HOURS = Array.from({ length: HOURS_PER_DAY }, (_, i) => (i + DAY_START_HOUR) % HOURS_PER_DAY)
@@ -41,9 +44,15 @@ export default function ScheduleGrid({
 }: Props) {
   const { days, columns } = useMemo(() => {
     if (tasks.length === 0) return { days: [], columns: [] }
-    const colNames = Array.from(new Set(tasks.map(t => t.task_type))).sort()
+
+    // Collect all unique task types, sorted by the fixed Excel column order
+    const typeSet = new Set(tasks.map(t => t.task_type))
+    const cols = COLUMN_ORDER.filter(c => typeSet.has(c))
+    // Append any unknown types at the end
+    typeSet.forEach(c => { if (!cols.includes(c)) cols.push(c) })
+
     const sortedDays = Array.from(new Set(tasks.map(t => isoDate(t.start_datetime)))).sort()
-    return { days: sortedDays, columns: colNames }
+    return { days: sortedDays, columns: cols }
   }, [tasks])
 
   const soldierMap = useMemo(() => {
@@ -62,11 +71,17 @@ export default function ScheduleGrid({
     return m
   }, [tasks])
 
+  // Returns soldiers sorted by their assignment order (index 0 = task commander)
   function assignedFor(task: Task): Soldier[] {
     return assignments
       .filter(a => a.task_id === task.id)
+      .sort((a, b) => (a.order ?? 99) - (b.order ?? 99))
       .map(a => soldierMap[a.soldier_id])
       .filter((s): s is Soldier => !!s)
+  }
+
+  function isHomeDay(dateStr: string, soldierId: string): boolean {
+    return finalLeave.some(r => r.date === dateStr && r.soldier_id === soldierId && r.status === 'approved')
   }
 
   function helperForDay(dateStr: string) {
@@ -95,13 +110,14 @@ export default function ScheduleGrid({
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto" dir="rtl">
       {days.map(day => {
         const dayTasks = tasksByDay[day] ?? []
         const helper = builderMode ? helperForDay(day) : null
         const dayDate = new Date(day + 'T12:00:00')
+        const soldierHome = currentSoldierId ? isHomeDay(day, currentSoldierId) : false
 
-        // For each column: map rowIndex → task, and track covered rows
+        // Build per-column lookup: rowIndex → task, covered rows set
         const taskAtRow: Record<string, Record<number, Task>> = {}
         const covered: Record<string, Set<number>> = {}
 
@@ -122,10 +138,16 @@ export default function ScheduleGrid({
 
         return (
           <div key={day} className="mb-8">
+            {/* Day header */}
             <div className="flex items-center gap-3 mb-2">
               <h3 className="font-bold text-navy text-base">{formatDate(dayDate)}</h3>
+              {soldierHome && (
+                <span className="bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-0.5 rounded-full">
+                  🏠 בית
+                </span>
+              )}
               {helper && (
-                <div className="flex gap-3 text-xs text-slate-500 flex-wrap">
+                <div className="flex gap-2 text-xs text-slate-500 flex-wrap">
                   {helper.leaving.length > 0 && (
                     <span className="bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full">
                       יוצאים 10:00: {helper.leaving.join(', ')}
@@ -143,12 +165,12 @@ export default function ScheduleGrid({
               )}
             </div>
 
-            <table className="w-full border-collapse text-xs">
+            <table className="w-full border-collapse text-xs" dir="rtl">
               <thead>
-                <tr className="bg-slate-50 text-right">
-                  <th className="border border-slate-200 px-2 py-1 w-14 text-xs">שעה</th>
+                <tr className="bg-slate-50">
+                  <th className="border border-slate-200 px-2 py-1 w-14 text-center text-xs font-semibold">שעה</th>
                   {columns.map(col => (
-                    <th key={col} className="border border-slate-200 px-2 py-1 text-xs">{col}</th>
+                    <th key={col} className="border border-slate-200 px-2 py-1 text-center text-xs font-semibold">{col}</th>
                   ))}
                 </tr>
               </thead>
@@ -157,11 +179,13 @@ export default function ScheduleGrid({
                   const isChangeover = hour === 10 && builderMode
                   return (
                     <tr key={rowIndex} className={isChangeover ? 'bg-yellow-50' : ''}>
-                      <td className={`border border-slate-200 px-2 font-mono text-xs font-semibold h-7 leading-none align-middle ${
+                      <td className={`border border-slate-200 px-1 font-mono text-xs font-semibold h-7 text-center align-middle ${
                         isChangeover ? 'text-yellow-700' : 'text-slate-400'
                       }`}>
                         {formatHour(hour)}
-                        {isChangeover && <span className="block text-yellow-600" style={{ fontSize: '9px' }}>⟳ חילוף</span>}
+                        {isChangeover && (
+                          <span className="block text-yellow-600" style={{ fontSize: '9px' }}>⟳ חילוף</span>
+                        )}
                       </td>
                       {columns.map(col => {
                         if (covered[col].has(rowIndex)) return null
@@ -169,7 +193,9 @@ export default function ScheduleGrid({
                         const task = taskAtRow[col][rowIndex] ?? null
 
                         if (!task) {
-                          return <td key={col} className="border border-slate-100 bg-slate-50 h-7" />
+                          return (
+                            <td key={col} className="border border-slate-100 bg-slate-50 h-7" />
+                          )
                         }
 
                         const durationHours = Math.max(1, Math.round(
@@ -185,7 +211,7 @@ export default function ScheduleGrid({
                           <td
                             key={col}
                             rowSpan={rowSpan}
-                            className={`border border-slate-200 px-2 py-1 align-top transition ${
+                            className={`border border-slate-200 px-2 py-1 text-center align-middle transition ${
                               onSelectTask ? 'cursor-pointer' : ''
                             } ${
                               task.id === selectedTaskId ? 'bg-blue-50 ring-2 ring-navy ring-inset' :
@@ -197,10 +223,10 @@ export default function ScheduleGrid({
                             onClick={onSelectTask ? () => onSelectTask(task.id) : undefined}
                           >
                             <div className="space-y-0.5">
-                              {assigned.map(s => (
+                              {assigned.map((s, idx) => (
                                 <div
                                   key={s.id}
-                                  className={`text-xs leading-snug ${s.is_commander ? 'font-bold' : ''}`}
+                                  className={`text-xs leading-snug ${idx === 0 ? 'font-bold' : ''}`}
                                 >
                                   {s.full_name}
                                   {builderMode && onRemoveSoldier && (

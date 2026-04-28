@@ -1,4 +1,3 @@
-import SoldierChip from './SoldierChip'
 import type { Task, Soldier } from '@/types'
 
 interface Props {
@@ -9,47 +8,62 @@ interface Props {
   onRemoveSoldier?: (soldierId: string) => void
   onClick?: () => void
   isSelected?: boolean
+  rowSpan?: number
 }
 
+// assigned[0] is the task commander (bold), rest are regular
 export default function ScheduleCell({
-  task, assigned, currentSoldierId, builderMode, onRemoveSoldier, onClick, isSelected
+  task, assigned, currentSoldierId, builderMode, onRemoveSoldier, onClick, isSelected, rowSpan
 }: Props) {
   if (!task) {
-    return <td className="border border-slate-100 px-2 py-2 text-center text-slate-200 text-xs">—</td>
+    return (
+      <td
+        rowSpan={rowSpan}
+        className="border border-slate-100 bg-slate-50 h-7 text-center align-middle"
+      />
+    )
   }
 
   const isMine = currentSoldierId ? assigned.some(s => s.id === currentSoldierId) : false
   const missing = task.required_people_count - assigned.length
-  const needsCommander = task.requires_commander
-  const hasCommander = assigned.some(s => s.is_commander)
-  const commanderMissing = needsCommander && !hasCommander
+  const commanderMissing = task.requires_commander && !assigned.some(s => s.is_commander)
 
   return (
     <td
-      className={`border border-slate-100 px-2 py-2 align-top cursor-pointer transition ${
+      rowSpan={rowSpan}
+      className={`border border-slate-200 px-2 py-1 text-center align-middle transition ${
+        onClick ? 'cursor-pointer' : ''
+      } ${
         isSelected ? 'bg-blue-50 ring-2 ring-navy ring-inset' :
-        isMine ? 'bg-navy' :
+        isMine ? 'bg-navy text-white' :
         commanderMissing ? 'bg-red-50' :
         missing > 0 ? 'bg-orange-50' :
-        'bg-white hover:bg-slate-50'
+        'bg-white'
       }`}
       onClick={onClick}
     >
-      <div className="flex flex-wrap gap-1 min-h-[24px]">
-        {assigned.map(s => (
-          <SoldierChip
+      <div className="space-y-0.5">
+        {assigned.map((s, idx) => (
+          <div
             key={s.id}
-            name={s.full_name}
-            highlight={isMine && s.id === currentSoldierId}
-            isCommander={s.is_commander}
-            onRemove={builderMode && onRemoveSoldier ? () => onRemoveSoldier(s.id) : undefined}
-          />
+            className={`text-xs leading-snug ${idx === 0 ? 'font-bold' : ''}`}
+          >
+            {s.full_name}
+            {builderMode && onRemoveSoldier && (
+              <button
+                onClick={e => { e.stopPropagation(); onRemoveSoldier(s.id) }}
+                className="mr-1 text-slate-300 hover:text-red-500 leading-none"
+              >
+                ×
+              </button>
+            )}
+          </div>
         ))}
         {missing > 0 && (
-          <span className="text-xs text-orange-600 font-semibold">−{missing}</span>
+          <div className="text-orange-600 font-semibold text-xs">−{missing}</div>
         )}
         {commanderMissing && (
-          <span className="text-xs text-red-600 font-semibold">★?</span>
+          <div className="text-red-600 font-semibold text-xs">★?</div>
         )}
       </div>
     </td>

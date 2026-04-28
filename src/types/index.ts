@@ -45,6 +45,7 @@ export interface Assignment {
   id: string
   task_id: string
   soldier_id: string
+  order: number   // 0 = task commander, 1+ = rest in Excel order
 }
 
 export interface LeaveRequest {
