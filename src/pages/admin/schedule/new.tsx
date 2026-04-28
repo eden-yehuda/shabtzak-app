@@ -10,6 +10,7 @@ import ConfirmModal from '@/components/ui/ConfirmModal'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useScheduleTasks } from '@/hooks/useSchedule'
 import { useAuth } from '@/hooks/useAuth'
+import { useFinalLeave } from '@/hooks/useFinalLeave'
 import { validateSchedule } from '@/utils/validation'
 import { exportToPDF, exportToExcel } from '@/utils/exportUtils'
 import { createSchedule } from '@/lib/firestore'
@@ -18,6 +19,7 @@ import type { ValidationError } from '@/types'
 export default function NewSchedule() {
   const { uid } = useAuth()
   const soldiers = useSoldiers()
+  const finalLeave = useFinalLeave()
   const [scheduleId, setScheduleId] = useState<string | null>(null)
   const [scheduleName, setScheduleName] = useState('')
   const { tasks, assignments } = useScheduleTasks(scheduleId)
@@ -40,7 +42,7 @@ export default function NewSchedule() {
   }
 
   function runValidation() {
-    const errors = validateSchedule(tasks, assignments)
+    const errors = validateSchedule(tasks, assignments, soldiers, finalLeave)
     setValidationErrors(errors)
     setShowValidation(true)
   }
