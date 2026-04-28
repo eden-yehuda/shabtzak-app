@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Layout from '@/components/layout/Layout'
 import ScheduleGrid from '@/components/schedule/ScheduleGrid'
+import InquiryModal from '@/components/InquiryModal'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
 import { useScheduleTasks } from '@/hooks/useSchedule'
@@ -19,6 +20,7 @@ export default function HomePage() {
   const [search, setSearch] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
   const [myTasksOnly, setMyTasksOnly] = useState(false)
+  const [showInquiry, setShowInquiry] = useState(false)
 
   // Load saved soldier from localStorage
   useEffect(() => {
@@ -44,8 +46,6 @@ export default function HomePage() {
   }, [])
 
   const currentSchedule = schedules[scheduleIdx] ?? null
-
-  // Get tasks and assignments for the current schedule
   const { tasks, assignments } = useScheduleTasks(currentSchedule?.id ?? null)
 
   const filteredSoldiers = useMemo(() =>
@@ -76,7 +76,6 @@ export default function HomePage() {
   const canGoBack = scheduleIdx < schedules.length - 1
   const canGoForward = scheduleIdx > 0
 
-  // If myTasksOnly: filter tasks to only those the soldier is assigned to
   const visibleTasks = useMemo(() => {
     if (myTasksOnly && selectedSoldierId) {
       return tasks.filter(t =>
@@ -104,7 +103,7 @@ export default function HomePage() {
               <div className="absolute top-full right-0 left-0 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-52 overflow-y-auto mt-1">
                 {filteredSoldiers.map(s => (
                   <button key={s.id} onClick={() => selectSoldier(s.id, s.full_name)}
-                    className="w-full text-right px-4 py-2 text-sm hover:bg-slate-50 transition">
+                    className="w-full text-right px-4 py-2 text-sm text-slate-900 hover:bg-slate-50 transition">
                     {s.full_name}
                   </button>
                 ))}
@@ -170,6 +169,23 @@ export default function HomePage() {
             myTasksOnly={myTasksOnly}
           />
       }
+
+      {/* פניות button */}
+      <div className="flex justify-center mt-8 mb-4">
+        <button
+          onClick={() => setShowInquiry(true)}
+          className="bg-white border border-slate-300 text-slate-700 rounded-xl px-6 py-2.5 text-sm font-medium hover:bg-slate-50 transition shadow-sm"
+        >
+          📨 שלח פנייה לאחראי שבצ&quot;ק
+        </button>
+      </div>
+
+      {showInquiry && (
+        <InquiryModal
+          soldiers={soldiers}
+          onClose={() => setShowInquiry(false)}
+        />
+      )}
     </Layout>
   )
 }
