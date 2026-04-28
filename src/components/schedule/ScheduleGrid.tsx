@@ -364,7 +364,7 @@ export default function ScheduleGrid({
                           )}
                           {isCurrentHour && (
                             <div className="absolute left-0 right-0 pointer-events-none z-20" style={{ top: nowPct }}>
-                              <div className="h-0.5 bg-red-500 opacity-80" />
+                              <div className="border-t-2 border-dashed border-red-400 opacity-50" />
                             </div>
                           )}
                         </td>
@@ -378,7 +378,7 @@ export default function ScheduleGrid({
                               <td key={col} className="border border-slate-200 bg-slate-100 h-8 relative">
                                 {isCurrentHour && (
                                   <div className="absolute left-0 right-0 pointer-events-none z-20" style={{ top: nowPct }}>
-                                    <div className="h-0.5 bg-red-500 opacity-80" />
+                                    <div className="border-t-2 border-dashed border-red-400 opacity-50" />
                                   </div>
                                 )}
                               </td>
@@ -427,7 +427,7 @@ export default function ScheduleGrid({
                             >
                               {taskNowPct && (
                                 <div className="absolute left-0 right-0 pointer-events-none z-20" style={{ top: taskNowPct }}>
-                                  <div className="h-0.5 bg-red-500 opacity-80" />
+                                  <div className="border-t-2 border-dashed border-red-400 opacity-50" />
                                 </div>
                               )}
                               <div className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition ${cardExtraClass}`} style={cardStyle}>
