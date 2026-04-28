@@ -82,14 +82,14 @@ export default function ScheduleGrid({
     return assignments
       .filter(a => a.task_id === task.id)
       .map(a => soldierMap[a.soldier_id])
-      .filter(Boolean)
+      .filter((s): s is Soldier => !!s)
   }
 
   function helperForDay(dateStr: string) {
     const leaving = finalLeave
       .filter(r => r.date === dateStr && r.status === 'approved')
       .map(r => soldierMap[r.soldier_id]?.full_name)
-      .filter(Boolean) as string[]
+      .filter((n): n is string => !!n)
 
     const prev = new Date(dateStr + 'T12:00:00')
     prev.setDate(prev.getDate() - 1)
@@ -99,7 +99,7 @@ export default function ScheduleGrid({
       .filter(r => r.date === prevStr && r.status === 'approved')
       .filter(r => !finalLeave.some(f => f.date === dateStr && f.soldier_id === r.soldier_id && f.status === 'approved'))
       .map(r => soldierMap[r.soldier_id]?.full_name)
-      .filter(Boolean) as string[]
+      .filter((n): n is string => !!n)
 
     const totalActive = soldiers.filter(s => s.is_active).length
     const present = totalActive - leaving.length
