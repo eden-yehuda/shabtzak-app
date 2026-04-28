@@ -160,6 +160,14 @@ export default function AdminLeavePage() {
         </div>
       </div>
 
+      {/* Pending warning */}
+      {totalPending > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-4 flex items-center gap-2 text-sm text-amber-800">
+          <span className="text-base">⚠️</span>
+          <span>שים לב: <strong>{totalPending}</strong> בקשות ממתינות לאישור — לחץ על <strong>!</strong> כדי לאשר</span>
+        </div>
+      )}
+
       {/* Legend */}
       <div className="flex gap-4 mb-4 text-xs text-slate-500 items-center flex-wrap">
         <div className="flex items-center gap-1.5">
@@ -167,14 +175,14 @@ export default function AdminLeavePage() {
           <span>מאושר</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-6 h-6 rounded-md bg-amber-50 border-2 border-amber-400 flex items-center justify-center text-amber-700 font-bold text-xs">?</div>
-          <span>ביקש ({totalPending} ממתינות)</span>
+          <div className="w-6 h-6 rounded-md bg-amber-50 border-2 border-amber-400 flex items-center justify-center text-amber-700 font-bold text-xs">!</div>
+          <span>ביקש — לחץ לאישור</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-6 h-6 rounded-md bg-slate-200 flex items-center justify-center text-slate-400 font-bold text-xs">✕</div>
           <span>נדחה</span>
         </div>
-        <span className="text-slate-400">לחיצה על ? מאשרת, לחיצה על ✓ מבטלת</span>
+        <span className="text-slate-400">לחיצה על ✓ מבטלת אישור</span>
       </div>
 
       <div className="overflow-x-auto">
@@ -236,7 +244,7 @@ export default function AdminLeavePage() {
                               : 'bg-white border border-slate-200 text-slate-300 hover:border-navy hover:text-navy'
                           }`}
                         >
-                          {isApproved ? '✓' : isRejected ? '✕' : isPending ? '?' : ''}
+                          {isApproved ? '✓' : isRejected ? '✕' : isPending ? '!' : ''}
                         </button>
                       </td>
                     )
