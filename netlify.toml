@@ -2,5 +2,8 @@
   command = "npm run build"
   publish = "out"
 
+[functions]
+  directory = "netlify/functions"
+
 [context.dev]
   command = "npm run build"
