@@ -3,7 +3,7 @@ import AdminLayout from '@/components/layout/AdminLayout'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useLeaveRequests } from '@/hooks/useLeaveRequests'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
-import { addDoc, deleteDoc, doc } from 'firebase/firestore'
+import { addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore'
 import { leaveRequestsRef, updateLeaveStatus } from '@/lib/firestore'
 import { db } from '@/lib/firebase'
 import type { Soldier } from '@/types'
@@ -53,6 +53,13 @@ export default function AdminLeavePage() {
   }
 
   const requests = pending.filter(r => !r.is_final)
+
+  async function approveRequest(requestId: string) {
+    await updateDoc(doc(db, 'leave_requests', requestId), {
+      is_final: true,
+      status: 'approved',
+    })
+  }
 
   async function rejectRequest(requestId: string) {
     await updateLeaveStatus(requestId, 'rejected', 'admin')
@@ -111,13 +118,14 @@ export default function AdminLeavePage() {
                       return (
                         <td key={d} className="px-1 py-1 text-center">
                           <button
-                            onClick={!rejected ? () => toggleFinal(s, d) : undefined}
+                            disabled={rejected}
+                            onClick={() => toggleFinal(s, d)}
                             title={requested && !approved ? 'ביקש יציאה' : rejected ? 'נדחה' : ''}
                             className={`w-8 h-8 rounded-lg text-xs font-bold transition ${
                               approved
                                 ? 'bg-green-500 text-white'
                                 : rejected
-                                ? 'bg-slate-300 text-slate-500 cursor-default'
+                                ? 'bg-slate-300 text-slate-500 disabled:cursor-default'
                                 : requested
                                 ? 'bg-blue-100 text-blue-700 border border-blue-300'
                                 : 'bg-white hover:bg-slate-100 text-slate-300'
@@ -161,7 +169,7 @@ export default function AdminLeavePage() {
 
       {tab === 'requests' && (
         <div className="space-y-2">
-          {requests.length === 0 && <p className="text-slate-400 text-center py-8">אין בקשות ממתינות</p>}
+          {requests.filter(r => r.status === 'pending').length === 0 && <p className="text-slate-400 text-center py-8">אין בקשות ממתינות</p>}
           {requests
             .filter(r => r.status === 'pending')
             .map(r => {
@@ -174,7 +182,7 @@ export default function AdminLeavePage() {
                   </div>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => soldier && toggleFinal(soldier, r.date)}
+                      onClick={() => approveRequest(r.id)}
                       className="bg-green-500 text-white text-xs px-3 py-1.5 rounded-lg"
                     >אשר ביציאות סופי</button>
                     <button

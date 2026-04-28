@@ -10,7 +10,12 @@ export function useFinalLeave(): LeaveRequest[] {
     return onSnapshot(q, snap => {
       setRequests(snap.docs.map(d => {
         const data = d.data()
-        return { id: d.id, ...data, created_at: data.created_at?.toDate() ?? new Date() } as LeaveRequest
+        return {
+          id: d.id,
+          ...data,
+          is_final: data.is_final ?? true,
+          created_at: data.created_at?.toDate() ?? new Date(),
+        } as LeaveRequest
       }))
     })
   }, [])
