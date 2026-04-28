@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import type { Task, Assignment, Soldier, LeaveRequest } from '@/types'
 
 interface Props {
@@ -70,6 +70,13 @@ export default function ScheduleGrid({
   currentSoldierId, builderMode, myTasksOnly, selectedTaskId, onSelectTask, onRemoveSoldier,
 }: Props) {
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
+  const [now, setNow] = useState(() => new Date())
+  const todayStr = useMemo(() => isoDate(new Date()), [])
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60000)
+    return () => clearInterval(id)
+  }, [])
 
   function toggleDay(day: string) {
     setCollapsedDays(prev => {
@@ -104,6 +111,17 @@ export default function ScheduleGrid({
 
     return { days: sortedDays, columns: cols }
   }, [tasks, finalLeave, myTasksOnly, currentSoldierId])
+
+  // Auto-collapse past days when day list becomes known
+  useEffect(() => {
+    setCollapsedDays(prev => {
+      const next = new Set(prev)
+      for (const day of days) {
+        if (day < todayStr) next.add(day)
+      }
+      return next
+    })
+  }, [days, todayStr])
 
   const soldierMap = useMemo(() => {
     const m: Record<string, Soldier> = {}
@@ -332,14 +350,22 @@ export default function ScheduleGrid({
                     }
                     if (myTasksOnly && soldierHome && rowIndex >= homeRowStart) return null
 
+                    const isCurrentHour = day === todayStr && hour === now.getHours()
+                    const nowPct = `${(now.getMinutes() / 60) * 100}%`
+
                     return (
                       <tr key={rowIndex} className={isChangeover ? 'bg-yellow-50' : ''}>
-                        <td className={`border border-slate-300 px-1 font-mono text-xs font-bold h-8 text-center align-middle ${
+                        <td className={`border border-slate-300 px-1 font-mono text-xs font-bold h-8 text-center align-middle relative ${
                           isChangeover ? 'bg-yellow-100 text-yellow-800' : 'bg-slate-700 text-slate-200'
                         }`}>
                           {formatHour(hour)}
                           {isChangeover && (
                             <span className="block text-yellow-600" style={{ fontSize: '9px' }}>⟳ חילוף</span>
+                          )}
+                          {isCurrentHour && (
+                            <div className="absolute left-0 right-0 pointer-events-none z-20" style={{ top: nowPct }}>
+                              <div className="h-0.5 bg-red-500 opacity-80" />
+                            </div>
                           )}
                         </td>
                         {columns.map(col => {
@@ -349,7 +375,13 @@ export default function ScheduleGrid({
 
                           if (!task) {
                             return (
-                              <td key={col} className="border border-slate-200 bg-slate-100 h-8" />
+                              <td key={col} className="border border-slate-200 bg-slate-100 h-8 relative">
+                                {isCurrentHour && (
+                                  <div className="absolute left-0 right-0 pointer-events-none z-20" style={{ top: nowPct }}>
+                                    <div className="h-0.5 bg-red-500 opacity-80" />
+                                  </div>
+                                )}
+                              </td>
                             )
                           }
 
@@ -379,13 +411,25 @@ export default function ScheduleGrid({
                             cardStyle = { backgroundColor: cs.cardBg, borderColor: cs.cardBorder, color: cs.cardText }
                           }
 
+                          // Time indicator within task cell (current time may fall anywhere in the rowSpan)
+                          const nowRowIndex = day === todayStr ? hourToRowIndex(now.getHours()) : -1
+                          const nowInTask = nowRowIndex >= rowIndex && nowRowIndex < rowIndex + rowSpan
+                          const taskNowPct = nowInTask
+                            ? `${((nowRowIndex - rowIndex + now.getMinutes() / 60) / rowSpan) * 100}%`
+                            : null
+
                           return (
                             <td
                               key={col}
                               rowSpan={rowSpan}
-                              className={`border border-slate-200 p-1 align-top h-8 ${onSelectTask ? 'cursor-pointer' : ''}`}
+                              className={`border border-slate-200 p-1 align-top h-8 relative ${onSelectTask ? 'cursor-pointer' : ''}`}
                               onClick={onSelectTask ? () => onSelectTask(task.id) : undefined}
                             >
+                              {taskNowPct && (
+                                <div className="absolute left-0 right-0 pointer-events-none z-20" style={{ top: taskNowPct }}>
+                                  <div className="h-0.5 bg-red-500 opacity-80" />
+                                </div>
+                              )}
                               <div className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition ${cardExtraClass}`} style={cardStyle}>
                               <div className="space-y-0.5">
                                 <div className={`text-[9px] mb-0.5 opacity-60`}>{timeLabel}</div>
