@@ -65,6 +65,7 @@ const scheduleData = {
 }
 
 const easyTypes = new Set(['מטבח', 'רס"פ', 'של"ז'])
+const requiresCommanderTypes = new Set(['פילבוקס', 'כיתת כוננות'])
 
 const tasks: { name: string; type: string; start: string; end: string; count: number; assignees: string[] }[] = [
   // חווה 7 — ראשון 26/4
@@ -173,6 +174,7 @@ async function seed() {
       task_name: t.name,
       task_type: t.type,
       difficulty: easyTypes.has(t.type) ? 'easy' : 'hard',
+      requires_commander: requiresCommanderTypes.has(t.type),
       start_datetime: Timestamp.fromDate(new Date(t.start)),
       end_datetime: Timestamp.fromDate(new Date(t.end)),
       required_people_count: t.count,

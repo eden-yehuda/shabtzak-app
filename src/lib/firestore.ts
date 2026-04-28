@@ -52,6 +52,7 @@ export const createLeaveRequest = (soldier_id: string, date: string) =>
     soldier_id,
     date,
     status: 'pending',
+    is_final: false,
     created_at: serverTimestamp(),
   })
 export const updateLeaveStatus = (

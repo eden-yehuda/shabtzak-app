@@ -13,6 +13,7 @@ export default function TaskModal({ scheduleId, onClose }: Props) {
   const [name, setName] = useState('')
   const [type, setType] = useState('')
   const [difficulty, setDifficulty] = useState<'hard' | 'easy'>('hard')
+  const [requiresCommander, setRequiresCommander] = useState(false)
   const [startDate, setStartDate] = useState('')
   const [startTime, setStartTime] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -53,7 +54,7 @@ export default function TaskModal({ scheduleId, onClose }: Props) {
         start_datetime: new Date(`${startDate}T${startTime}`),
         end_datetime: new Date(`${endDate}T${endTime}`),
         required_people_count: required,
-        requires_commander: false,
+        requires_commander: requiresCommander,
         notes,
       })
       onClose()
@@ -83,7 +84,10 @@ export default function TaskModal({ scheduleId, onClose }: Props) {
             onChange={e => {
               const tt = taskTypes.find(t => t.name === e.target.value)
               setType(e.target.value)
-              if (tt) setDifficulty(tt.difficulty)
+              if (tt) {
+                setDifficulty(tt.difficulty)
+                setRequiresCommander(tt.requires_commander ?? false)
+              }
             }}
             className="w-full border rounded-xl px-4 py-2 text-sm"
           >
