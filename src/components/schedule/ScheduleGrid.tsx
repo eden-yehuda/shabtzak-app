@@ -502,6 +502,9 @@ export default function ScheduleGrid({
                                           )}
                                         </div>
                                       ))}
+                                      {task.notes && task.notes !== 'מחלקה 3' && (
+                                        <div className="text-[9px] opacity-70 mt-0.5">{task.notes}</div>
+                                      )}
                                       {missing > 0 && (
                                         <div className="text-orange-600 font-semibold">−{missing}</div>
                                       )}
