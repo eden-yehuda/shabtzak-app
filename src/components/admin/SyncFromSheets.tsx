@@ -147,7 +147,7 @@ export default function SyncFromSheets({
             difficulty: tt?.difficulty ?? 'hard',
             start_datetime: startDate,
             end_datetime: endDate,
-            required_people_count: tt?.soldiers_required ?? block.soldierIds.length || 1,
+            required_people_count: tt?.soldiers_required ?? (block.soldierIds.length || 1),
             requires_commander: tt?.requires_commander ?? false,
             notes: '',
           })
