@@ -62,27 +62,49 @@ function sameSet(a: string[], b: string[]): boolean {
   return sa.every((v, i) => v === sb[i])
 }
 
+// ── Normalize Hebrew string for matching ────────────────────────────────────
+function norm(s: string): string {
+  return s.trim().replace(/\s+/g, ' ').normalize('NFC')
+}
+
 // ── Fuzzy soldier name matching ──────────────────────────────────────────────
+// Handles: exact match, word match, prefix ("רפא"→"רפאל"), multi-word short names.
+// Used by both task-schedule sync and leave sync.
 export function matchSoldierName(shortName: string, soldiers: Soldier[]): Soldier | null {
-  const q = shortName.trim()
+  const q = norm(shortName)
   if (!q) return null
 
-  // 1. Exact word match
+  // 1. Exact full-name match
   for (const s of soldiers) {
-    const parts = s.full_name.split(/\s+/)
+    if (norm(s.full_name) === q) return s
+  }
+
+  // 2. Query equals one of the words in full name  ("נתן" → "נתן לדקוב", "אלמו" → "עידן אלמו")
+  for (const s of soldiers) {
+    const parts = norm(s.full_name).split(' ')
     if (parts.some(p => p === q)) return s
   }
 
-  // 2. Any word starts with query (prefix)
+  // 3. Any word in full name STARTS WITH query ("רפא" → "רפאל אלקיים")
   for (const s of soldiers) {
-    const parts = s.full_name.split(/\s+/)
-    if (parts.some(p => p.startsWith(q))) return s
+    const parts = norm(s.full_name).split(' ')
+    if (q.length >= 2 && parts.some(p => p.startsWith(q))) return s
   }
 
-  // 3. Query starts with any word (short prefix of full part)
+  // 4. Multi-word short name: every query word matches a word in full name
+  //    ("עידן א" → matches if "עידן" and "א" each prefix a word in full name)
+  const qParts = q.split(' ')
+  if (qParts.length > 1) {
+    for (const s of soldiers) {
+      const parts = norm(s.full_name).split(' ')
+      if (qParts.every(qp => parts.some(p => p === qp || p.startsWith(qp)))) return s
+    }
+  }
+
+  // 5. Query starts with any word (short prefix of full part, Hebrew nicknames)
   for (const s of soldiers) {
-    const parts = s.full_name.split(/\s+/)
-    if (parts.some(p => q.startsWith(p) && p.length >= 2)) return s
+    const parts = norm(s.full_name).split(' ')
+    if (parts.some(p => p.length >= 2 && q.startsWith(p))) return s
   }
 
   return null

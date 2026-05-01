@@ -6,6 +6,7 @@ import { useFinalLeave } from '@/hooks/useFinalLeave'
 import { addDoc, deleteDoc, doc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore'
 import { leaveRequestsRef } from '@/lib/firestore'
 import { db } from '@/lib/firebase'
+import { matchSoldierName } from '@/utils/sheetParser'
 import type { Soldier } from '@/types'
 
 interface SurveySettings {
@@ -126,12 +127,7 @@ export default function AdminLeavePage() {
   const totalPending = soldierRequests.filter(r => r.status === 'pending').length
 
   function matchSoldier(name: string) {
-    const exact = soldiers.find(s => s.full_name === name)
-    if (exact) return exact
-    return soldiers.find(s =>
-      s.full_name.split(' ').some(part => name === part && part.length >= 2) ||
-      name.split(' ').some(part => s.full_name.includes(part) && part.length >= 2)
-    ) ?? null
+    return matchSoldierName(name, soldiers)
   }
 
   async function syncFromSheet() {
