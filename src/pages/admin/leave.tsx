@@ -44,8 +44,8 @@ function dayLabel(dateStr: string) {
 }
 
 interface SyncResult {
-  added: { soldierName: string; date: string }[]
-  skipped: { soldierName: string; date: string; reason: string }[]
+  added: number
+  removed: number
   unmatched: string[]
 }
 
@@ -125,6 +125,15 @@ export default function AdminLeavePage() {
 
   const totalPending = soldierRequests.filter(r => r.status === 'pending').length
 
+  function matchSoldier(name: string) {
+    const exact = soldiers.find(s => s.full_name === name)
+    if (exact) return exact
+    return soldiers.find(s =>
+      s.full_name.split(' ').some(part => name === part && part.length >= 2) ||
+      name.split(' ').some(part => s.full_name.includes(part) && part.length >= 2)
+    ) ?? null
+  }
+
   async function syncFromSheet() {
     setSyncing(true)
     setSyncResult(null)
@@ -134,44 +143,77 @@ export default function AdminLeavePage() {
       if (data.error) { alert(`שגיאה: ${data.error}`); return }
 
       const entries: { soldierName: string; date: string }[] = data.entries
-      const added: SyncResult['added'] = []
-      const skipped: SyncResult['skipped'] = []
-      const unmatchedSet = new Set<string>()
+      const sheetDates: string[] = data.dates ?? []
 
-      for (const entry of entries) {
-        // Match soldier by exact full_name, fallback to word match
-        let soldier = soldiers.find(s => s.full_name === entry.soldierName)
-        if (!soldier) {
-          soldier = soldiers.find(s =>
-            s.full_name.split(' ').some(part => entry.soldierName.includes(part) && part.length >= 2) ||
-            entry.soldierName.split(' ').some(part => s.full_name.includes(part) && part.length >= 2)
-          )
-        }
-        if (!soldier) { unmatchedSet.add(entry.soldierName); continue }
-
-        const alreadyApproved = finalLeave.some(r => r.soldier_id === soldier!.id && r.date === entry.date)
-        if (alreadyApproved) {
-          skipped.push({ soldierName: entry.soldierName, date: entry.date, reason: 'כבר מאושר' })
-          continue
-        }
-
-        // Promote pending → approved, or create new
-        const pending = soldierRequests.find(r => r.soldier_id === soldier!.id && r.date === entry.date && r.status === 'pending')
-        if (pending) {
-          await updateDoc(doc(db, 'leave_requests', pending.id), { is_final: true, status: 'approved' })
-        } else {
-          await addDoc(leaveRequestsRef(), {
-            soldier_id: soldier.id,
-            date: entry.date,
-            status: 'approved',
-            is_final: true,
-            created_at: new Date(),
+      // 1. Update survey dates to cover the sheet range
+      if (sheetDates.length > 0) {
+        const firstDate = sheetDates[0]
+        const lastDate = sheetDates[sheetDates.length - 1]
+        const needsUpdate = !survey?.is_open || (survey.to ?? '') < lastDate || (survey.from ?? '') > firstDate
+        if (needsUpdate) {
+          await setDoc(doc(db, 'settings', 'leave_survey'), {
+            is_open: true,
+            from: firstDate,
+            to: lastDate,
+            max_days: survey?.max_days ?? 5,
           })
         }
-        added.push({ soldierName: soldier.full_name, date: entry.date })
       }
 
-      setSyncResult({ added, skipped, unmatched: Array.from(unmatchedSet) })
+      // 2. Build sheet map: date → Set<soldierId>
+      const unmatchedSet = new Set<string>()
+      const sheetMap = new Map<string, Set<string>>()
+      for (const date of sheetDates) sheetMap.set(date, new Set())
+
+      for (const entry of entries) {
+        const soldier = matchSoldier(entry.soldierName)
+        if (!soldier) { unmatchedSet.add(entry.soldierName); continue }
+        if (sheetMap.has(entry.date)) sheetMap.get(entry.date)!.add(soldier.id)
+      }
+
+      // 3. Build Firestore current map: date → Map<soldierId, recordId>
+      const currentMap = new Map<string, Map<string, string>>()
+      for (const lr of finalLeave) {
+        if (!sheetDates.includes(lr.date)) continue
+        if (!currentMap.has(lr.date)) currentMap.set(lr.date, new Map())
+        currentMap.get(lr.date)!.set(lr.soldier_id, lr.id)
+      }
+
+      // 4. Bidirectional diff
+      let addedCount = 0, removedCount = 0
+
+      await Promise.all(Array.from(sheetMap.entries()).map(async ([date, sheetSoldiers]) => {
+        const current = currentMap.get(date) ?? new Map<string, string>()
+
+        // Remove: in Firestore but NOT in sheet
+        await Promise.all(Array.from(current.entries()).map(async ([sid, rid]) => {
+          if (!sheetSoldiers.has(sid)) {
+            await deleteDoc(doc(db, 'leave_requests', rid))
+            removedCount++
+          }
+        }))
+
+        // Add: in sheet but NOT in Firestore
+        await Promise.all(Array.from(sheetSoldiers).map(async sid => {
+          if (!current.has(sid)) {
+            const pending = soldierRequests.find(r => r.soldier_id === sid && r.date === date && r.status === 'pending')
+            if (pending) {
+              await updateDoc(doc(db, 'leave_requests', pending.id), { is_final: true, status: 'approved' })
+            } else {
+              await addDoc(leaveRequestsRef(), {
+                soldier_id: sid,
+                date,
+                status: 'approved',
+                is_final: true,
+                created_at: new Date(),
+              })
+            }
+            addedCount++
+          }
+        }))
+      }))
+
+      setSyncResult({ added: addedCount, removed: removedCount, unmatched: Array.from(unmatchedSet) })
     } catch (e) {
       alert('שגיאה בסנכרון: ' + String(e))
     } finally {
@@ -242,31 +284,24 @@ export default function AdminLeavePage() {
       {/* Sync result */}
       {syncResult && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 text-sm" dir="rtl">
-          <div className="flex justify-between items-start">
-            <div className="font-bold text-blue-800 mb-2">📊 תוצאות סנכרון מגיליון</div>
+          <div className="flex justify-between items-start mb-2">
+            <div className="font-bold text-blue-800">📊 תוצאות סנכרון מגיליון</div>
             <button onClick={() => setSyncResult(null)} className="text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
           </div>
-          {syncResult.added.length > 0 && (
-            <div className="mb-2">
-              <span className="text-green-700 font-semibold">✓ נוספו {syncResult.added.length} יציאות:</span>
-              <div className="flex flex-wrap gap-1 mt-1">
-                {syncResult.added.map((e, i) => (
-                  <span key={i} className="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded-full">
-                    {e.soldierName} · {e.date.slice(5).replace('-', '/')}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-          {syncResult.unmatched.length > 0 && (
-            <div className="text-amber-700">
-              <span className="font-semibold">⚠️ לא זוהו ({syncResult.unmatched.length}):</span>{' '}
-              {syncResult.unmatched.join(', ')}
-            </div>
-          )}
-          {syncResult.added.length === 0 && syncResult.unmatched.length === 0 && (
-            <span className="text-slate-600">אין שינויים — הכל מסונכרן.</span>
-          )}
+          <div className="flex flex-wrap gap-3">
+            {syncResult.added > 0 && (
+              <span className="text-green-700 font-semibold">✓ נוספו {syncResult.added} יציאות</span>
+            )}
+            {syncResult.removed > 0 && (
+              <span className="text-red-600 font-semibold">✕ הוסרו {syncResult.removed} יציאות</span>
+            )}
+            {syncResult.unmatched.length > 0 && (
+              <span className="text-amber-700">⚠️ לא זוהו: {syncResult.unmatched.join(', ')}</span>
+            )}
+            {syncResult.added === 0 && syncResult.removed === 0 && syncResult.unmatched.length === 0 && (
+              <span className="text-slate-600">✓ הכל מסונכרן — אין שינויים.</span>
+            )}
+          </div>
         </div>
       )}
 

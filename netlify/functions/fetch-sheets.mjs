@@ -1,7 +1,8 @@
 const SHEET_URL =
   'https://docs.google.com/spreadsheets/d/1iSXPZv8IyBBp1B9CAJtI-9cKjgZyrocBkqvlSJIhswI/export?format=csv&gid=269298694'
 
-const TASK_COLUMNS = ['אחורית', 'ש"ג', 'של"ז', 'כ"כ א', 'כ"כ ב', 'עתודה']
+// Canonical task type names → match header cells that START with these
+const TASK_COLUMN_PREFIXES = ['אחורית', 'ש"ג', 'של"ז', 'כ"כ א', 'כ"כ ב', 'עתודה']
 
 export default async function handler(req) {
   try {
@@ -36,9 +37,7 @@ function parseCSV(text) {
       if (ch === '"') {
         if (text[i + 1] === '"') { field += '"'; i += 2 }
         else { inQuotes = false; i++ }
-      } else {
-        field += ch; i++
-      }
+      } else { field += ch; i++ }
     } else {
       if (ch === '"') { inQuotes = true; i++ }
       else if (ch === ',') { current.push(field); field = ''; i++ }
@@ -68,7 +67,8 @@ function parseDate(cell) {
 }
 
 function parseHour(cell) {
-  const m = cell.match(/(\d{1,2})/)
+  // "08:00" → 8, "14" → 14
+  const m = cell.match(/^(\d{1,2})/)
   return m ? parseInt(m[1], 10) : null
 }
 
@@ -76,44 +76,43 @@ function parseSoldiers(cell) {
   return cell.split('\n').map(s => s.trim()).filter(Boolean)
 }
 
+function canonicalTaskType(headerCell) {
+  for (const prefix of TASK_COLUMN_PREFIXES) {
+    if (headerCell === prefix || headerCell.startsWith(prefix)) return prefix
+  }
+  return null
+}
+
 // ── Main processing ──────────────────────────────────────────────────────────
 function processRecords(records) {
-  // Detect header row + column indices
+  // Find the header row: contains 'שעות' or task type column names
   let headerIdx = -1
-  const colMap = {} // taskType -> colIndex
+  let dayCol = 0
+  let hourCol = 1
+  const colMap = {} // canonicalTaskType → colIndex
 
-  for (let r = 0; r < Math.min(records.length, 20); r++) {
+  for (let r = 0; r < Math.min(records.length, 15); r++) {
     const row = records[r]
+    let taskColsFound = 0
+
     for (let c = 0; c < row.length; c++) {
       const cell = row[c].trim()
-      if (TASK_COLUMNS.includes(cell)) {
-        colMap[cell] = c
-        headerIdx = r
-      }
+      if (cell === 'יום') dayCol = c
+      if (cell === 'שעות') { hourCol = c; headerIdx = r }
+      const canonical = canonicalTaskType(cell)
+      if (canonical) { colMap[canonical] = c; taskColsFound++ }
     }
-    if (Object.keys(colMap).length >= 3) break
+    if (taskColsFound >= 3) { headerIdx = r; break }
   }
 
   if (headerIdx === -1) return { rows: [], error: 'Header row not found' }
-
-  // Detect day & hour column positions from header row context
-  // day column is the first column that contains day info (usually col 1)
-  // hour column is usually col 2
-  let dayCol = 1
-  let hourCol = 2
-
-  // Refine by looking at first data row
-  const firstData = records[headerIdx + 1] || []
-  for (let c = 0; c < Math.min(firstData.length, 5); c++) {
-    if (parseDate(firstData[c])) { dayCol = c; break }
-  }
 
   const rows = []
   let currentDate = null
 
   for (let r = headerIdx + 1; r < records.length; r++) {
     const row = records[r]
-    if (!row || row.length < 3) continue
+    if (!row || row.length < hourCol + 1) continue
 
     const dayCell = (row[dayCol] || '').trim()
     const hourCell = (row[hourCol] || '').trim()
