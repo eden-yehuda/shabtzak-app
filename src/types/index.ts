@@ -48,6 +48,7 @@ export interface Assignment {
   soldier_id: string
   order: number   // 0 = task commander, 1+ = rest in Excel order
   note?: string   // e.g. "עד 10", "מ15"
+  alternating_group?: number // soldiers with the same non-null group in a task are shown together with " / "
 }
 
 export interface LeaveRequest {

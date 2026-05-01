@@ -14,7 +14,7 @@ import { useScheduleTasks } from '@/hooks/useSchedule'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
 import { useSchedule } from '@/hooks/useSchedules'
 import { validateSchedule } from '@/utils/validation'
-import { deleteAssignment } from '@/lib/firestore'
+import { deleteAssignment, updateAssignment } from '@/lib/firestore'
 import type { ValidationError } from '@/types'
 
 export default function EditSchedule() {
@@ -265,6 +265,27 @@ export default function EditSchedule() {
                 onResizeTask={handleResizeTask}
                 onDeleteTask={handleDeleteTask}
                 onMoveTaskToSlot={handleMoveTaskToSlot}
+                onPairSoldiers={async (taskId, soldierIdA, soldierIdB) => {
+                  const taskAssigns = assignments.filter(a => a.task_id === taskId)
+                  const maxGroup = Math.max(0, ...taskAssigns.map(a => a.alternating_group ?? 0))
+                  const group = maxGroup + 1
+                  const aA = taskAssigns.find(a => a.soldier_id === soldierIdA)
+                  const aB = taskAssigns.find(a => a.soldier_id === soldierIdB)
+                  await Promise.all([
+                    aA && updateAssignment(aA.id, { alternating_group: group }),
+                    aB && updateAssignment(aB.id, { alternating_group: group }),
+                  ].filter(Boolean))
+                  await touchSchedule()
+                }}
+                onUnpairSoldier={async (taskId, soldierId) => {
+                  const taskAssigns = assignments.filter(a => a.task_id === taskId)
+                  const a = taskAssigns.find(a => a.soldier_id === soldierId)
+                  if (!a?.alternating_group) return
+                  const group = a.alternating_group
+                  const members = taskAssigns.filter(m => m.alternating_group === group)
+                  await Promise.all(members.map(m => updateAssignment(m.id, { alternating_group: null })))
+                  await touchSchedule()
+                }}
               />
           }
         </div>

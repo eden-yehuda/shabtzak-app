@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
 import type { Task, Assignment, Soldier, LeaveRequest } from '@/types'
 
 interface Props {
@@ -16,6 +16,8 @@ interface Props {
   onResizeTask?: (taskId: string, endHourDelta: number) => void
   onDeleteTask?: (taskId: string) => void
   onMoveTaskToSlot?: (taskId: string, date: string, hour: number) => void
+  onPairSoldiers?: (taskId: string, soldierIdA: string, soldierIdB: string) => void
+  onUnpairSoldier?: (taskId: string, soldierId: string) => void
 }
 
 // Visual order right-to-left (RTL)
@@ -75,9 +77,11 @@ export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
   currentSoldierId, builderMode, myTasksOnly, selectedTaskId, onSelectTask, onRemoveSoldier,
   onMoveTask, onResizeTask, onDeleteTask, onMoveTaskToSlot,
+  onPairSoldiers, onUnpairSoldier,
 }: Props) {
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
   const [now, setNow] = useState(() => new Date())
+  const [pairingCandidate, setPairingCandidate] = useState<{ taskId: string; soldierId: string } | null>(null)
   const todayStr = useMemo(() => isoDate(new Date()), [])
 
   useEffect(() => {
@@ -146,14 +150,31 @@ export default function ScheduleGrid({
     return m
   }, [tasks])
 
-  function assignedFor(task: Task): Array<Soldier & { note?: string }> {
-    const result: Array<Soldier & { note?: string }> = []
+  type AssignedSoldier = Soldier & { note?: string; alternating_group?: number }
+
+  function assignedFor(task: Task): AssignedSoldier[] {
+    const result: AssignedSoldier[] = []
     for (const a of assignments.filter(a => a.task_id === task.id).sort((a, b) => (a.order ?? 99) - (b.order ?? 99))) {
       const s = soldierMap[a.soldier_id]
-      if (s) result.push({ ...s, note: a.note })
+      if (s) result.push({ ...s, note: a.note, alternating_group: a.alternating_group })
     }
     return result
   }
+
+  const handlePairToggle = useCallback((taskId: string, soldier: AssignedSoldier) => {
+    if (soldier.alternating_group != null) {
+      onUnpairSoldier?.(taskId, soldier.id)
+      return
+    }
+    if (!pairingCandidate) {
+      setPairingCandidate({ taskId, soldierId: soldier.id })
+    } else if (pairingCandidate.taskId === taskId && pairingCandidate.soldierId !== soldier.id) {
+      onPairSoldiers?.(taskId, pairingCandidate.soldierId, soldier.id)
+      setPairingCandidate(null)
+    } else {
+      setPairingCandidate(null)
+    }
+  }, [pairingCandidate, onPairSoldiers, onUnpairSoldier])
 
   function isHomeDay(dateStr: string, soldierId: string): boolean {
     return finalLeave.some(r => r.date === dateStr && r.soldier_id === soldierId && r.status === 'approved')
@@ -478,30 +499,68 @@ export default function ScheduleGrid({
                                     <div className="text-xs font-semibold text-slate-500">מחלקה 3</div>
                                   ) : (
                                     <>
-                                      {assigned.map((s, idx) => (
-                                        <div
-                                          key={s.id}
-                                          className={`text-xs leading-snug flex items-center justify-center gap-0.5 ${idx === 0 ? 'font-bold' : ''}`}
-                                        >
-                                          <span>{s.full_name}</span>
-                                          {s.note && (
-                                            <span
-                                              title={s.note}
-                                              className="inline-flex items-center text-[9px] font-semibold px-1 py-0 rounded cursor-default select-none bg-white/40"
-                                            >
-                                              {s.note}
-                                            </span>
-                                          )}
-                                          {builderMode && onRemoveSoldier && (
-                                            <button
-                                              onClick={e => { e.stopPropagation(); onRemoveSoldier(task.id, s.id) }}
-                                              className="mr-1 opacity-40 hover:opacity-100 hover:text-red-500 leading-none"
-                                            >
-                                              ×
-                                            </button>
-                                          )}
-                                        </div>
-                                      ))}
+                                      {(() => {
+                                        // Group alternating soldiers into display rows
+                                        const rows: AssignedSoldier[][] = []
+                                        const seen = new Set<string>()
+                                        for (const s of assigned) {
+                                          if (seen.has(s.id)) continue
+                                          seen.add(s.id)
+                                          if (s.alternating_group != null) {
+                                            const partners = assigned.filter(
+                                              p => p.id !== s.id && p.alternating_group === s.alternating_group && !seen.has(p.id)
+                                            )
+                                            for (const p of partners) seen.add(p.id)
+                                            rows.push([s, ...partners])
+                                          } else {
+                                            rows.push([s])
+                                          }
+                                        }
+                                        return rows.map((row, rowIdx) => (
+                                          <div
+                                            key={row[0].id}
+                                            className={`text-xs leading-snug flex items-center justify-center flex-wrap gap-x-0.5 ${rowIdx === 0 ? 'font-bold' : ''}`}
+                                          >
+                                            {row.map((s, si) => (
+                                              <span key={s.id} className="flex items-center gap-0.5">
+                                                {si > 0 && <span className="opacity-40 font-normal">/</span>}
+                                                <span>{s.full_name}</span>
+                                                {s.note && (
+                                                  <span
+                                                    title={s.note}
+                                                    className="inline-flex items-center text-[9px] font-semibold px-1 py-0 rounded cursor-default select-none bg-white/40"
+                                                  >
+                                                    {s.note}
+                                                  </span>
+                                                )}
+                                              </span>
+                                            ))}
+                                            {builderMode && onRemoveSoldier && (
+                                              <button
+                                                onClick={e => { e.stopPropagation(); onRemoveSoldier(task.id, row[0].id) }}
+                                                className="opacity-40 hover:opacity-100 hover:text-red-500 leading-none"
+                                              >
+                                                ×
+                                              </button>
+                                            )}
+                                            {builderMode && (onPairSoldiers || onUnpairSoldier) && (
+                                              <button
+                                                title={row[0].alternating_group != null ? 'בטל לסירוגין' : pairingCandidate?.taskId === task.id && pairingCandidate.soldierId !== row[0].id ? 'חבר כלסירוגין' : 'סמן לסירוגין'}
+                                                onClick={e => { e.stopPropagation(); handlePairToggle(task.id, row[0]) }}
+                                                className={`text-[9px] px-0.5 rounded leading-none transition ${
+                                                  row[0].alternating_group != null
+                                                    ? 'text-blue-600 opacity-80 hover:opacity-100'
+                                                    : pairingCandidate?.taskId === task.id && pairingCandidate.soldierId === row[0].id
+                                                      ? 'text-orange-500 opacity-100'
+                                                      : 'opacity-30 hover:opacity-80'
+                                                }`}
+                                              >
+                                                ⇄
+                                              </button>
+                                            )}
+                                          </div>
+                                        ))
+                                      })()}
                                       {task.notes && task.notes !== 'מחלקה 3' && (
                                         <div className="text-[10px] font-semibold mt-0.5 border-t border-current/20 pt-0.5">{task.notes}</div>
                                       )}

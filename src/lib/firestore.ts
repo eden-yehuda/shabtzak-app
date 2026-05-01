@@ -42,6 +42,8 @@ export const deleteTask = (id: string) =>
 export const assignmentsRef = () => collection(db, 'assignments')
 export const createAssignment = (task_id: string, soldier_id: string, order: number = 1, note?: string) =>
   addDoc(assignmentsRef(), { task_id, soldier_id, order, ...(note ? { note } : {}) })
+export const updateAssignment = (id: string, data: Record<string, unknown>) =>
+  updateDoc(doc(db, 'assignments', id), data)
 export const deleteAssignment = (id: string) =>
   deleteDoc(doc(db, 'assignments', id))
 
