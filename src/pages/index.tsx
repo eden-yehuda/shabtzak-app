@@ -25,7 +25,6 @@ export default function HomePage() {
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [schedulesLoading, setSchedulesLoading] = useState(true)
   const [scheduleIdx, setScheduleIdx] = useState(0)
-  const defaultScheduleSet = useRef(false) // only auto-select current schedule once
   const userNavigated = useRef(false) // user manually navigated — don't override
   const soldiers = useSoldiers()
   const finalLeave = useFinalLeave()
@@ -70,22 +69,16 @@ export default function HomePage() {
     })
   }, [])
 
-  // Once schedules load, default to whichever schedule contains today.
-  // After that, never override the user's navigation.
+  // On every schedules update, jump to the schedule that contains today —
+  // unless the user has manually navigated away.
   useEffect(() => {
-    if (schedules.length === 0 || userNavigated.current || defaultScheduleSet.current) return
+    if (schedules.length === 0 || userNavigated.current) return
     const now = new Date()
     const idx = schedules.findIndex(s =>
-      s.start_datetime instanceof Date && s.end_datetime instanceof Date &&
+      s.start_datetime && s.end_datetime &&
       s.start_datetime <= now && s.end_datetime >= now
     )
-    if (idx >= 0) {
-      setScheduleIdx(idx)
-      defaultScheduleSet.current = true
-    } else if (!defaultScheduleSet.current) {
-      // No schedule contains today — fall back to most recent (index 0)
-      defaultScheduleSet.current = true
-    }
+    if (idx >= 0) setScheduleIdx(idx)
   }, [schedules])
 
   const currentSchedule = schedules[scheduleIdx] ?? null
