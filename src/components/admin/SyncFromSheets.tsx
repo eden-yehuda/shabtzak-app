@@ -261,21 +261,30 @@ export default function SyncFromSheets({
                     ))}
                   </div>
 
-                  {/* Assignment changes — show full names, not IDs */}
-                  {entry.status === 'updated' && (
-                    <div className="mt-1 text-xs space-y-0.5">
-                      {entry.addAssignments.length > 0 && (
-                        <div className="text-green-700">
-                          + מצטרפים: {entry.addAssignments.map(id => soldiers.find(s => s.id === id)?.full_name ?? id).join(', ')}
-                        </div>
-                      )}
-                      {entry.removeAssignments.length > 0 && (
-                        <div className="text-red-600">
-                          − מוסרים: {entry.removeAssignments.map(id => soldiers.find(s => s.id === id)?.full_name ?? id).join(', ')}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {/* Assignment changes — show as replacements */}
+                  {entry.status === 'updated' && (() => {
+                    const name = (id: string) => soldiers.find(s => s.id === id)?.full_name ?? id
+                    const adds = entry.addAssignments
+                    const removes = entry.removeAssignments
+                    const pairCount = Math.min(adds.length, removes.length)
+                    const extraAdds = adds.slice(pairCount)
+                    const extraRemoves = removes.slice(pairCount)
+                    return (
+                      <div className="mt-1 text-xs space-y-0.5">
+                        {Array.from({ length: pairCount }, (_, i) => (
+                          <div key={i} className="text-amber-700">
+                            ⇄ {name(adds[i])} מחליף את {name(removes[i])}
+                          </div>
+                        ))}
+                        {extraAdds.map((id, i) => (
+                          <div key={`a${i}`} className="text-green-700">+ נוסף: {name(id)}</div>
+                        ))}
+                        {extraRemoves.map((id, i) => (
+                          <div key={`r${i}`} className="text-red-600">− הוסר: {name(id)}</div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </div>
               ))}
 
