@@ -19,10 +19,11 @@ interface Props {
 }
 
 // Visual order right-to-left (RTL)
-const COLUMN_ORDER = ['סיור', 'כוננות', 'כ"כ א', 'כ"כ ב', 'אחורית', 'ש"ג', 'של"ז']
+const COLUMN_ORDER = ['תרג"ד', 'סיור', 'כוננות', 'כ"כ א', 'כ"כ ב', 'אחורית', 'ש"ג', 'של"ז']
 
 // Colors per column type
 const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: string; cardBorder: string; cardText: string; mineBg: string }> = {
+  'תרג"ד':  { headBg: '#8B5E3C', headText: '#fff', cardBg: '#FDF3E7', cardBorder: '#E8C99A', cardText: '#4A2E0A', mineBg: '#6B4220' },
   'סיור':    { headBg: '#3B6E52', headText: '#fff', cardBg: '#E8F5EE', cardBorder: '#A8D5BC', cardText: '#1A3D2A', mineBg: '#2D5540' },
   'כוננות':  { headBg: '#4A5E88', headText: '#fff', cardBg: '#EAF0F8', cardBorder: '#B0C4E4', cardText: '#1A2D50', mineBg: '#38507A' },
   'כ"כ א':  { headBg: '#516B85', headText: '#fff', cardBg: '#EEF2F7', cardBorder: '#C4D3E3', cardText: '#1E3550', mineBg: '#3A5470' },
