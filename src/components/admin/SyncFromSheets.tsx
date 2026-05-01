@@ -18,6 +18,7 @@ interface Props {
   tasks: Task[]
   assignments: Assignment[]
   onClose: () => void
+  onApplied?: () => void
 }
 
 function isoDate(d: Date) {
@@ -51,6 +52,7 @@ export default function SyncFromSheets({
   tasks,
   assignments,
   onClose,
+  onApplied,
 }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -147,6 +149,7 @@ export default function SyncFromSheets({
         }
       }
       setApplied(true)
+      onApplied?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'שגיאה בהחלת שינויים')
     } finally {

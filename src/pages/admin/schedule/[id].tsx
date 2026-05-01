@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
-import { doc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import AdminLayout from '@/components/layout/AdminLayout'
 import ScheduleGrid from '@/components/schedule/ScheduleGrid'
@@ -67,7 +67,7 @@ export default function EditSchedule() {
   async function publish() {
     if (!scheduleId) return
     try {
-      await updateDoc(doc(db, 'schedules', scheduleId), { status: 'published' })
+      await updateDoc(doc(db, 'schedules', scheduleId), { status: 'published', updated_at: serverTimestamp() })
     } catch { alert('פרסום נכשל — נסה שוב') }
     setConfirmPublish(false)
   }
@@ -75,12 +75,17 @@ export default function EditSchedule() {
   async function unpublish() {
     if (!scheduleId) return
     try {
-      await updateDoc(doc(db, 'schedules', scheduleId), { status: 'draft' })
+      await updateDoc(doc(db, 'schedules', scheduleId), { status: 'draft', updated_at: serverTimestamp() })
     } catch { alert('ביטול פרסום נכשל') }
   }
 
   const errorCount = validationErrors.filter(e => e.type === 'error').length
   const warnCount = validationErrors.filter(e => e.type === 'warning').length
+
+  async function touchSchedule() {
+    if (!scheduleId) return
+    await updateDoc(doc(db, 'schedules', scheduleId), { updated_at: serverTimestamp() })
+  }
 
   async function handleMoveTask(taskId: string, hourDelta: number) {
     const task = tasks.find(t => t.id === taskId)
@@ -89,6 +94,7 @@ export default function EditSchedule() {
     const newEnd = new Date(task.end_datetime.getTime() + hourDelta * 3_600_000)
     try {
       await updateDoc(doc(db, 'tasks', taskId), { start_datetime: newStart, end_datetime: newEnd })
+      await touchSchedule()
     } catch { alert('שגיאה בעדכון שעת משימה') }
   }
 
@@ -99,6 +105,7 @@ export default function EditSchedule() {
     if (newEnd <= task.start_datetime) return
     try {
       await updateDoc(doc(db, 'tasks', taskId), { end_datetime: newEnd })
+      await touchSchedule()
     } catch { alert('שגיאה בשינוי אורך משימה') }
   }
 
@@ -108,6 +115,7 @@ export default function EditSchedule() {
       await Promise.all(taskAssignments.map(a => deleteAssignment(a.id)))
       await deleteDoc(doc(db, 'tasks', taskId))
       if (selectedTaskId === taskId) setSelectedTaskId(null)
+      await touchSchedule()
     } catch { alert('שגיאה במחיקת משימה') }
   }
 
@@ -119,6 +127,7 @@ export default function EditSchedule() {
     const newEnd = new Date(newStart.getTime() + duration)
     try {
       await updateDoc(doc(db, 'tasks', taskId), { start_datetime: newStart, end_datetime: newEnd })
+      await touchSchedule()
     } catch { alert('שגיאה בהזזת משימה') }
   }
 
@@ -250,7 +259,7 @@ export default function EditSchedule() {
                 onSelectTask={id => setSelectedTaskId(prev => prev === id ? null : id)}
                 onRemoveSoldier={async (taskId, soldierId) => {
                   const a = assignments.find(a => a.task_id === taskId && a.soldier_id === soldierId)
-                  if (a) await deleteAssignment(a.id)
+                  if (a) { await deleteAssignment(a.id); await touchSchedule() }
                 }}
                 onMoveTask={handleMoveTask}
                 onResizeTask={handleResizeTask}
@@ -289,6 +298,7 @@ export default function EditSchedule() {
           tasks={tasks}
           assignments={assignments}
           onClose={() => setShowSyncModal(false)}
+          onApplied={touchSchedule}
         />
       )}
 

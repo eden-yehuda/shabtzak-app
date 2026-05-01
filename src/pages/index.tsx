@@ -13,6 +13,14 @@ import type { Schedule } from '@/types'
 
 interface SurveySettings { is_open: boolean; from: string; to: string; max_days: number }
 
+function formatUpdatedAt(d: Date): string {
+  const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
+  const day = days[d.getDay()]
+  const date = `${d.getDate()}/${d.getMonth() + 1}`
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return `${day} ${date} ${time}`
+}
+
 export default function HomePage() {
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [schedulesLoading, setSchedulesLoading] = useState(true)
@@ -52,6 +60,7 @@ export default function HomePage() {
         ...d.data(),
         start_datetime: d.data().start_datetime?.toDate(),
         end_datetime: d.data().end_datetime?.toDate(),
+        updated_at: d.data().updated_at?.toDate(),
       } as Schedule))
       setSchedules(all.filter(s => s.status === 'published'))
       setSchedulesLoading(false)
@@ -162,9 +171,14 @@ export default function HomePage() {
             className="text-sm px-3 py-1 rounded-lg border border-slate-300 disabled:opacity-30 disabled:cursor-not-allowed">
             קודם →
           </button>
-          <span className="text-sm font-semibold text-navy text-center">
-            {currentSchedule?.name ?? ''}
-          </span>
+          <div className="text-center">
+            <div className="text-sm font-semibold text-navy">{currentSchedule?.name ?? ''}</div>
+            {currentSchedule?.updated_at && (
+              <div className="text-[10px] text-slate-400 mt-0.5">
+                עדכון אחרון: {formatUpdatedAt(currentSchedule.updated_at)}
+              </div>
+            )}
+          </div>
           <button onClick={() => setScheduleIdx(i => i - 1)} disabled={!canGoForward}
             className="text-sm px-3 py-1 rounded-lg border border-slate-300 disabled:opacity-30 disabled:cursor-not-allowed">
             ← הבא

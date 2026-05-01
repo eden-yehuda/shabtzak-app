@@ -15,6 +15,7 @@ export interface Schedule {
   end_datetime: Date
   status: 'draft' | 'published'
   created_by: string
+  updated_at?: Date
 }
 
 export interface TaskType {
