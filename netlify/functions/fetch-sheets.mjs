@@ -82,7 +82,13 @@ function parseSoldierEntry(raw) {
 }
 
 function parseSoldiers(cell) {
-  return cell.split('\n').map(s => s.trim()).filter(Boolean).map(parseSoldierEntry)
+  return cell.split('\n').map(s => s.trim()).filter(Boolean).flatMap(line => {
+    // "חגי / בוצר" → two soldiers sharing/alternating the slot
+    if (line.includes(' / ')) {
+      return line.split(' / ').map(part => parseSoldierEntry(part.trim()))
+    }
+    return [parseSoldierEntry(line)]
+  })
 }
 
 function canonicalTaskType(headerCell) {

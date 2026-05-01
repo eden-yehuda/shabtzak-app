@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { Soldier, Task, Assignment } from '@/types'
+import { useState, useEffect } from 'react'
+import type { Soldier, Task, Assignment, TaskType } from '@/types'
 import {
   groupIntoBlocks,
   resolveBlocks,
@@ -7,7 +7,7 @@ import {
   type SheetRow,
   type DiffEntry,
 } from '@/utils/sheetParser'
-import { createTask, createAssignment, deleteAssignment, assignmentsRef } from '@/lib/firestore'
+import { createTask, updateTask, createAssignment, deleteAssignment, assignmentsRef, taskTypesRef } from '@/lib/firestore'
 import { getDocs, query, where } from 'firebase/firestore'
 
 interface Props {
@@ -54,12 +54,19 @@ export default function SyncFromSheets({
   onClose,
   onApplied,
 }: Props) {
+  const [taskTypes, setTaskTypes] = useState<TaskType[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [diff, setDiff] = useState<DiffEntry[] | null>(null)
   const [syncWarnings, setSyncWarnings] = useState<string[]>([])
   const [applying, setApplying] = useState(false)
   const [applied, setApplied] = useState(false)
+
+  useEffect(() => {
+    getDocs(taskTypesRef()).then(snap => {
+      setTaskTypes(snap.docs.map(d => ({ id: d.id, ...d.data() } as TaskType)))
+    })
+  }, [])
 
   const scheduleDates = daysInRange(scheduleStart, scheduleEnd)
 
@@ -83,11 +90,22 @@ export default function SyncFromSheets({
 
       const blocks = groupIntoBlocks(rows)
       const resolved = resolveBlocks(blocks, soldiers)
-      const entries = diffBlocks(resolved, tasks, assignments, scheduleId)
 
-      // Warn if first soldier in a block is not a commander
+      // Expand single-row blocks to full shift duration from task type config
+      const expanded = resolved.map(block => {
+        if (block.endHour - block.startHour > 1) return block  // already multi-hour
+        const tt = taskTypes.find(t => t.name === block.taskType)
+        if (!tt?.shift_duration_hours || tt.shift_duration_hours <= 1) return block
+        return { ...block, endHour: block.startHour + tt.shift_duration_hours }
+      })
+
+      const entries = diffBlocks(expanded, tasks, assignments, scheduleId)
+
+      // Warn only for task types that require a commander and have none assigned
       const warnings: string[] = []
       for (const entry of entries) {
+        const tt = taskTypes.find(t => t.name === entry.block.taskType)
+        if (!tt?.requires_commander) continue
         if (entry.block.soldierIds.length === 0) continue
         const hasCommander = entry.block.soldierIds.some(id => soldiers.find(s => s.id === id)?.is_commander)
         if (!hasCommander) {
@@ -115,6 +133,7 @@ export default function SyncFromSheets({
 
         if (entry.status === 'new') {
           const { block } = entry
+          const tt = taskTypes.find(t => t.name === block.taskType)
           const startDate = new Date(`${block.date}T${String(block.startHour).padStart(2, '0')}:00`)
           const endHour = block.endHour === 24 ? 0 : block.endHour
           const endDate = new Date(`${block.date}T${String(endHour).padStart(2, '0')}:00`)
@@ -125,11 +144,11 @@ export default function SyncFromSheets({
             schedule_id: scheduleId,
             task_name: block.taskType,
             task_type: block.taskType,
-            difficulty: 'hard',
+            difficulty: tt?.difficulty ?? 'hard',
             start_datetime: startDate,
             end_datetime: endDate,
-            required_people_count: block.soldierIds.length || 1,
-            requires_commander: false,
+            required_people_count: tt?.soldiers_required ?? block.soldierIds.length || 1,
+            requires_commander: tt?.requires_commander ?? false,
             notes: '',
           })
           taskId = ref.id
@@ -149,6 +168,21 @@ export default function SyncFromSheets({
             await createAssignment(taskId, sid, order, note || undefined)
           }
         } else if (entry.status === 'updated' && taskId) {
+          // Update task times if they differ from the block
+          const { block } = entry
+          const newStart = new Date(`${block.date}T${String(block.startHour).padStart(2, '0')}:00`)
+          const endHourAdj = block.endHour === 24 ? 0 : block.endHour
+          const newEnd = new Date(`${block.date}T${String(endHourAdj).padStart(2, '0')}:00`)
+          if (block.endHour >= 24 || (block.endHour === 0 && block.startHour > 0)) {
+            newEnd.setDate(newEnd.getDate() + 1)
+          }
+          const existingTask = tasks.find(t => t.id === taskId)
+          if (existingTask && (
+            Math.abs(existingTask.start_datetime.getTime() - newStart.getTime()) > 60000 ||
+            Math.abs(existingTask.end_datetime.getTime() - newEnd.getTime()) > 60000
+          )) {
+            await updateTask(taskId, { start_datetime: newStart, end_datetime: newEnd })
+          }
           // Remove old assignments
           for (const sid of entry.removeAssignments) {
             const a = assignments.find(a => a.task_id === taskId && a.soldier_id === sid)
