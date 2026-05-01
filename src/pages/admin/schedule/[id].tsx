@@ -135,6 +135,18 @@ export default function EditSchedule() {
   const scheduleStart = schedule.start_datetime
   const scheduleEnd = schedule.end_datetime
 
+  function isoDateLocal(d: Date) {
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
+  }
+
+  async function updateScheduleRange(field: 'start_datetime' | 'end_datetime', dateStr: string) {
+    if (!scheduleId || !dateStr) return
+    const d = new Date(dateStr + 'T12:00:00')
+    try {
+      await updateDoc(doc(db, 'schedules', scheduleId), { [field]: d })
+    } catch { alert('שגיאה בעדכון תאריך') }
+  }
+
   return (
     <AdminLayout>
       <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
@@ -146,6 +158,25 @@ export default function EditSchedule() {
           }`}>
             {schedule.status === 'published' ? '✓ מפורסם' : 'טיוטה'}
           </span>
+          {/* Editable date range */}
+          <div className="flex items-center gap-1.5 mt-1.5 text-xs text-slate-500" dir="rtl">
+            <span>טווח:</span>
+            <input
+              type="date"
+              defaultValue={isoDateLocal(scheduleStart)}
+              key={isoDateLocal(scheduleStart)}
+              onChange={e => updateScheduleRange('start_datetime', e.target.value)}
+              className="border border-slate-200 rounded px-1 py-0.5 text-xs text-slate-700 focus:outline-none focus:border-navy"
+            />
+            <span>–</span>
+            <input
+              type="date"
+              defaultValue={isoDateLocal(scheduleEnd)}
+              key={isoDateLocal(scheduleEnd)}
+              onChange={e => updateScheduleRange('end_datetime', e.target.value)}
+              className="border border-slate-200 rounded px-1 py-0.5 text-xs text-slate-700 focus:outline-none focus:border-navy"
+            />
+          </div>
         </div>
 
         <div className="flex gap-2 flex-wrap">
