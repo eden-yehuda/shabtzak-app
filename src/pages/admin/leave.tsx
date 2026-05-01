@@ -48,6 +48,7 @@ interface SyncResult {
   added: number
   removed: number
   unmatched: string[]
+  warnings: string[]
 }
 
 export default function AdminLeavePage() {
@@ -209,7 +210,7 @@ export default function AdminLeavePage() {
         }))
       }))
 
-      setSyncResult({ added: addedCount, removed: removedCount, unmatched: Array.from(unmatchedSet) })
+      setSyncResult({ added: addedCount, removed: removedCount, unmatched: Array.from(unmatchedSet), warnings: data.warnings ?? [] })
     } catch (e) {
       alert('שגיאה בסנכרון: ' + String(e))
     } finally {
@@ -298,6 +299,14 @@ export default function AdminLeavePage() {
               <span className="text-slate-600">✓ הכל מסונכרן — אין שינויים.</span>
             )}
           </div>
+          {syncResult.warnings.length > 0 && (
+            <div className="mt-2 space-y-0.5">
+              <div className="text-xs font-semibold text-red-700 mb-1">⚠️ אי-התאמה לעמודה Q:</div>
+              {syncResult.warnings.map((w, i) => (
+                <div key={i} className="text-xs text-red-600">{w}</div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
