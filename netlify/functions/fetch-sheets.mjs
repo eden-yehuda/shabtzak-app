@@ -72,8 +72,17 @@ function parseHour(cell) {
   return m ? parseInt(m[1], 10) : null
 }
 
+// Returns { name, note } pairs — "ירין - רס"פ" → { name: "ירין", note: "רס"פ" }
+function parseSoldierEntry(raw) {
+  const dashIdx = raw.indexOf(' - ')
+  if (dashIdx !== -1) {
+    return { name: raw.slice(0, dashIdx).trim(), note: raw.slice(dashIdx + 3).trim() }
+  }
+  return { name: raw.trim(), note: null }
+}
+
 function parseSoldiers(cell) {
-  return cell.split('\n').map(s => s.trim()).filter(Boolean)
+  return cell.split('\n').map(s => s.trim()).filter(Boolean).map(parseSoldierEntry)
 }
 
 function canonicalTaskType(headerCell) {
@@ -128,8 +137,10 @@ function processRecords(records) {
 
     for (const [taskType, colIdx] of Object.entries(colMap)) {
       const cell = row[colIdx] ? row[colIdx].trim() : ''
-      const soldiers = parseSoldiers(cell)
-      rows.push({ date: currentDate, taskType, hour, soldiers })
+      const entries = parseSoldiers(cell)
+      const soldiers = entries.map(e => e.name)
+      const soldierNotes = entries.map(e => e.note)
+      rows.push({ date: currentDate, taskType, hour, soldiers, soldierNotes })
     }
   }
 

@@ -118,8 +118,10 @@ export default function SyncFromSheets({
             notes: '',
           })
           taskId = ref.id
-          for (const sid of entry.block.soldierIds) {
-            await createAssignment(taskId, sid)
+          for (let i = 0; i < entry.block.soldierIds.length; i++) {
+            const sid = entry.block.soldierIds[i]
+            const note = entry.block.soldierIdNotes?.[i] ?? undefined
+            await createAssignment(taskId, sid, note || undefined)
           }
         } else if (entry.status === 'updated' && taskId) {
           // Remove old assignments
@@ -136,9 +138,11 @@ export default function SyncFromSheets({
               }
             }
           }
-          // Add new assignments
+          // Add new assignments (with notes)
           for (const sid of entry.addAssignments) {
-            await createAssignment(taskId, sid)
+            const idxInBlock = entry.block.soldierIds.indexOf(sid)
+            const note = idxInBlock >= 0 ? (entry.block.soldierIdNotes?.[idxInBlock] ?? undefined) : undefined
+            await createAssignment(taskId, sid, note || undefined)
           }
         }
       }
@@ -249,17 +253,16 @@ export default function SyncFromSheets({
                     </span>
                   </div>
 
-                  {/* Soldier name resolution */}
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {entry.block.matchedNames.map((m, j) => (
-                      <span key={j} className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                        m.full ? 'bg-white/70' : 'bg-red-100 text-red-700'
-                      }`}>
-                        {m.short}{m.full && m.full !== m.short ? ` → ${m.full}` : ''}
-                        {!m.full && ' ⚠️'}
-                      </span>
-                    ))}
-                  </div>
+                  {/* Show only unmatched names as warnings */}
+                  {entry.block.matchedNames.some(m => !m.full) && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {entry.block.matchedNames.filter(m => !m.full).map((m, j) => (
+                        <span key={j} className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-red-100 text-red-700">
+                          {m.short} ⚠️ לא זוהה
+                        </span>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Assignment changes — show as replacements */}
                   {entry.status === 'updated' && (() => {

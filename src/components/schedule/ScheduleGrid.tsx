@@ -310,8 +310,6 @@ export default function ScheduleGrid({
                   let returnBlockRendered = false
 
                   return DAY_HOURS.map((hour, rowIndex) => {
-                    const isChangeover = hour === 10 && builderMode
-
                     // בית block: returning morning (rows 0..returnRowEnd)
                     if (myTasksOnly && soldierReturning && rowIndex <= returnRowEnd && !returnBlockRendered) {
                       returnBlockRendered = true
@@ -340,9 +338,8 @@ export default function ScheduleGrid({
                       const span = HOURS_PER_DAY - homeRowStart
                       return (
                         <tr key={rowIndex}>
-                          <td className={`border border-slate-300 px-1 font-mono text-xs font-bold h-8 text-center align-middle ${isChangeover ? 'bg-yellow-100 text-yellow-800' : 'bg-slate-700 text-slate-200'}`}>
+                          <td className="border border-slate-300 px-1 font-mono text-xs font-bold h-8 text-center align-middle bg-slate-700 text-slate-200">
                             {formatHour(hour)}
-                            {isChangeover && <span className="block text-yellow-700" style={{ fontSize: '9px' }}>⟳ חילוף</span>}
                           </td>
                           <td
                             colSpan={columns.length}
@@ -361,14 +358,9 @@ export default function ScheduleGrid({
                     const nowPct = `${(now.getMinutes() / 60) * 100}%`
 
                     return (
-                      <tr key={rowIndex} className={isChangeover ? 'bg-yellow-50' : ''}>
-                        <td className={`border border-slate-300 px-1 font-mono text-xs font-bold h-8 text-center align-middle relative ${
-                          isChangeover ? 'bg-yellow-100 text-yellow-800' : 'bg-slate-700 text-slate-200'
-                        }`}>
+                      <tr key={rowIndex}>
+                        <td className="border border-slate-300 px-1 font-mono text-xs font-bold h-8 text-center align-middle relative bg-slate-700 text-slate-200">
                           {formatHour(hour)}
-                          {isChangeover && (
-                            <span className="block text-yellow-600" style={{ fontSize: '9px' }}>⟳ חילוף</span>
-                          )}
                           {isCurrentHour && (
                             <div className="absolute left-0 right-0 pointer-events-none z-20" style={{ top: nowPct }}>
                               <div className="border-t-2 border-dashed border-red-400 opacity-50" />

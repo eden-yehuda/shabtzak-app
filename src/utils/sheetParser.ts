@@ -4,7 +4,8 @@ export interface SheetRow {
   date: string      // YYYY-MM-DD
   taskType: string
   hour: number      // 0-23
-  soldiers: string[] // short names from sheet
+  soldiers: string[]            // short names from sheet
+  soldierNotes?: (string | null)[] // parallel notes (e.g. "רס"פ")
 }
 
 export interface SheetBlock {
@@ -13,7 +14,9 @@ export interface SheetBlock {
   startHour: number
   endHour: number   // exclusive (e.g. 8→16 means 08:00–16:00)
   soldiers: string[]
+  soldierNotes: (string | null)[]  // parallel to soldiers
   soldierIds: string[]
+  soldierIdNotes: (string | null)[] // parallel to soldierIds
   matchedNames: { short: string; full: string | null }[]
 }
 
@@ -30,6 +33,7 @@ export function groupIntoBlocks(rows: SheetRow[]): SheetBlock[] {
   const blocks: SheetBlock[] = []
 
   for (const row of sorted) {
+    const notes = row.soldierNotes ?? row.soldiers.map(() => null)
     const last = blocks[blocks.length - 1]
     if (
       last &&
@@ -46,7 +50,9 @@ export function groupIntoBlocks(rows: SheetRow[]): SheetBlock[] {
         startHour: row.hour,
         endHour: row.hour + 1,
         soldiers: row.soldiers,
+        soldierNotes: notes,
         soldierIds: [],
+        soldierIdNotes: [],
         matchedNames: [],
       })
     }
@@ -117,11 +123,19 @@ export function resolveBlocks(blocks: SheetBlock[], soldiers: Soldier[]): SheetB
       const match = matchSoldierName(short, soldiers)
       return { short, full: match?.full_name ?? null }
     })
-    const soldierIds = matchedNames
-      .map(m => soldiers.find(s => s.full_name === m.full)?.id ?? null)
-      .filter((id): id is string => id !== null)
 
-    return { ...b, matchedNames, soldierIds }
+    // Pair each resolved soldier with its note
+    const soldierIds: string[] = []
+    const soldierIdNotes: (string | null)[] = []
+    matchedNames.forEach((m, i) => {
+      const id = soldiers.find(s => s.full_name === m.full)?.id ?? null
+      if (id !== null) {
+        soldierIds.push(id)
+        soldierIdNotes.push(b.soldierNotes[i] ?? null)
+      }
+    })
+
+    return { ...b, matchedNames, soldierIds, soldierIdNotes }
   })
 }
 
