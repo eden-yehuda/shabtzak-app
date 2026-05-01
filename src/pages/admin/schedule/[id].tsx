@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
-import { doc, updateDoc } from 'firebase/firestore'
+import { doc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import AdminLayout from '@/components/layout/AdminLayout'
 import ScheduleGrid from '@/components/schedule/ScheduleGrid'
@@ -14,6 +14,7 @@ import { useScheduleTasks } from '@/hooks/useSchedule'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
 import { useSchedule } from '@/hooks/useSchedules'
 import { validateSchedule } from '@/utils/validation'
+import { deleteAssignment } from '@/lib/firestore'
 import type { ValidationError } from '@/types'
 
 export default function EditSchedule() {
@@ -80,6 +81,46 @@ export default function EditSchedule() {
 
   const errorCount = validationErrors.filter(e => e.type === 'error').length
   const warnCount = validationErrors.filter(e => e.type === 'warning').length
+
+  async function handleMoveTask(taskId: string, hourDelta: number) {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) return
+    const newStart = new Date(task.start_datetime.getTime() + hourDelta * 3_600_000)
+    const newEnd = new Date(task.end_datetime.getTime() + hourDelta * 3_600_000)
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), { start_datetime: newStart, end_datetime: newEnd })
+    } catch { alert('שגיאה בעדכון שעת משימה') }
+  }
+
+  async function handleResizeTask(taskId: string, endHourDelta: number) {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) return
+    const newEnd = new Date(task.end_datetime.getTime() + endHourDelta * 3_600_000)
+    if (newEnd <= task.start_datetime) return
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), { end_datetime: newEnd })
+    } catch { alert('שגיאה בשינוי אורך משימה') }
+  }
+
+  async function handleDeleteTask(taskId: string) {
+    const taskAssignments = assignments.filter(a => a.task_id === taskId)
+    try {
+      await Promise.all(taskAssignments.map(a => deleteAssignment(a.id)))
+      await deleteDoc(doc(db, 'tasks', taskId))
+      if (selectedTaskId === taskId) setSelectedTaskId(null)
+    } catch { alert('שגיאה במחיקת משימה') }
+  }
+
+  async function handleMoveTaskToSlot(taskId: string, date: string, hour: number) {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) return
+    const duration = task.end_datetime.getTime() - task.start_datetime.getTime()
+    const newStart = new Date(`${date}T${String(hour).padStart(2, '0')}:00:00`)
+    const newEnd = new Date(newStart.getTime() + duration)
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), { start_datetime: newStart, end_datetime: newEnd })
+    } catch { alert('שגיאה בהזזת משימה') }
+  }
 
   if (!scheduleId) return null
 
@@ -177,10 +218,13 @@ export default function EditSchedule() {
                 selectedTaskId={selectedTaskId}
                 onSelectTask={id => setSelectedTaskId(prev => prev === id ? null : id)}
                 onRemoveSoldier={async (taskId, soldierId) => {
-                  const { deleteAssignment } = await import('@/lib/firestore')
                   const a = assignments.find(a => a.task_id === taskId && a.soldier_id === soldierId)
                   if (a) await deleteAssignment(a.id)
                 }}
+                onMoveTask={handleMoveTask}
+                onResizeTask={handleResizeTask}
+                onDeleteTask={handleDeleteTask}
+                onMoveTaskToSlot={handleMoveTaskToSlot}
               />
           }
         </div>

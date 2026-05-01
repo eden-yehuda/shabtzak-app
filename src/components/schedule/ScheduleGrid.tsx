@@ -12,6 +12,10 @@ interface Props {
   selectedTaskId?: string | null
   onSelectTask?: (taskId: string) => void
   onRemoveSoldier?: (taskId: string, soldierId: string) => void
+  onMoveTask?: (taskId: string, hourDelta: number) => void
+  onResizeTask?: (taskId: string, endHourDelta: number) => void
+  onDeleteTask?: (taskId: string) => void
+  onMoveTaskToSlot?: (taskId: string, date: string, hour: number) => void
 }
 
 // Visual order right-to-left (RTL): כ"כ א → כ"כ ב → אחורית → ש"ג → של"ז
@@ -68,6 +72,7 @@ function addDays(dateStr: string, n: number): string {
 export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
   currentSoldierId, builderMode, myTasksOnly, selectedTaskId, onSelectTask, onRemoveSoldier,
+  onMoveTask, onResizeTask, onDeleteTask, onMoveTaskToSlot,
 }: Props) {
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
   const [now, setNow] = useState(() => new Date())
@@ -194,6 +199,8 @@ export default function ScheduleGrid({
         const soldierReturning = currentSoldierId ? isReturnMorning(day, currentSoldierId) : false
 
         // Build per-column task lookup
+        // taskAtRow[col][rowIndex] = task that STARTS at that row
+        // overflowRowSpan[col][rowIndex] = custom rowspan override for tasks that overflow from prev day
         const taskAtRow: Record<string, Record<number, Task>> = {}
         const covered: Record<string, Set<number>> = {}
         const overflowRowSpan: Record<string, number> = {} // col → rowSpan for row-0 overflow tasks
@@ -374,8 +381,15 @@ export default function ScheduleGrid({
                           const task = taskAtRow[col][rowIndex] ?? null
 
                           if (!task) {
+                            // Empty cell — if a task is selected and we're in builder mode,
+                            // clicking moves the selected task to this slot
+                            const canMoveTo = builderMode && selectedTaskId && onMoveTaskToSlot
                             return (
-                              <td key={col} className="border border-slate-200 bg-slate-100 h-8 relative">
+                              <td
+                                key={col}
+                                className={`border border-slate-200 bg-slate-100 h-8 relative ${canMoveTo ? 'cursor-copy hover:bg-sky-50' : ''}`}
+                                onClick={canMoveTo ? () => onMoveTaskToSlot!(selectedTaskId!, day, hour) : undefined}
+                              >
                                 {isCurrentHour && (
                                   <div className="absolute left-0 right-0 pointer-events-none z-20" style={{ top: nowPct }}>
                                     <div className="border-t-2 border-dashed border-red-400 opacity-50" />
@@ -386,9 +400,15 @@ export default function ScheduleGrid({
                           }
 
                           const cs = COL_STYLE[col] ?? DEFAULT_COL_STYLE
-                          const durationHours = overflowRowSpan[col] ?? Math.max(1, Math.round(
-                            (task.end_datetime.getTime() - task.start_datetime.getTime()) / 3600000
-                          ))
+
+                          // Bug fix: overflowRowSpan only applies to the task at rowIndex === 0
+                          // (a previous-day task overflowing into this day). For regular tasks,
+                          // always compute duration from actual start/end times.
+                          const durationHours = (rowIndex === 0 && overflowRowSpan[col] !== undefined)
+                            ? overflowRowSpan[col]
+                            : Math.max(1, Math.round(
+                                (task.end_datetime.getTime() - task.start_datetime.getTime()) / 3600000
+                              ))
                           const rowSpan = Math.min(durationHours, HOURS_PER_DAY - rowIndex)
                           const timeLabel = `${formatHour(task.start_datetime.getHours())}–${formatHour(task.end_datetime.getHours())}`
                           const assigned = assignedFor(task)
@@ -418,6 +438,9 @@ export default function ScheduleGrid({
                             ? `${((nowRowIndex - rowIndex + now.getMinutes() / 60) / rowSpan) * 100}%`
                             : null
 
+                          // Edit buttons — shown inside the selected card in builderMode
+                          const showEditBar = builderMode && isSelected && (onMoveTask || onResizeTask || onDeleteTask)
+
                           return (
                             <td
                               key={col}
@@ -430,40 +453,91 @@ export default function ScheduleGrid({
                                   <div className="border-t-2 border-dashed border-red-400 opacity-50" />
                                 </div>
                               )}
-                              <div className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition ${cardExtraClass}`} style={cardStyle}>
-                              <div className="space-y-0.5">
-                                <div className={`text-[9px] mb-0.5 opacity-60`}>{timeLabel}</div>
-                                {assigned.map((s, idx) => (
+                              <div
+                                className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition ${cardExtraClass}`}
+                                style={cardStyle}
+                              >
+                                <div className="space-y-0.5">
+                                  <div className="text-[9px] mb-0.5 opacity-60">{timeLabel}</div>
+                                  {assigned.map((s, idx) => (
+                                    <div
+                                      key={s.id}
+                                      className={`text-xs leading-snug flex items-center justify-center gap-0.5 ${idx === 0 ? 'font-bold' : ''}`}
+                                    >
+                                      <span>{s.full_name}</span>
+                                      {s.note && (
+                                        <span
+                                          title={s.note}
+                                          className="inline-flex items-center text-[9px] font-semibold px-1 py-0 rounded cursor-default select-none bg-white/40"
+                                        >
+                                          {s.note}
+                                        </span>
+                                      )}
+                                      {builderMode && onRemoveSoldier && (
+                                        <button
+                                          onClick={e => { e.stopPropagation(); onRemoveSoldier(task.id, s.id) }}
+                                          className="mr-1 opacity-40 hover:opacity-100 hover:text-red-500 leading-none"
+                                        >
+                                          ×
+                                        </button>
+                                      )}
+                                    </div>
+                                  ))}
+                                  {missing > 0 && (
+                                    <div className="text-orange-600 font-semibold">−{missing}</div>
+                                  )}
+                                  {commanderMissing && (
+                                    <div className="text-red-600 font-semibold">★?</div>
+                                  )}
+                                </div>
+
+                                {/* Edit action bar — visible only when task is selected in builder mode */}
+                                {showEditBar && (
                                   <div
-                                    key={s.id}
-                                    className={`text-xs leading-snug flex items-center justify-center gap-0.5 ${idx === 0 ? 'font-bold' : ''}`}
+                                    className="flex gap-0.5 justify-center mt-1 pt-1 border-t border-sky-200 flex-wrap"
+                                    onClick={e => e.stopPropagation()}
                                   >
-                                    <span>{s.full_name}</span>
-                                    {s.note && (
-                                      <span
-                                        title={s.note}
-                                        className="inline-flex items-center text-[9px] font-semibold px-1 py-0 rounded cursor-default select-none bg-white/40"
-                                      >
-                                        {s.note}
-                                      </span>
+                                    {onMoveTask && (
+                                      <>
+                                        <button
+                                          title="הזז שעה אחת קודם"
+                                          onClick={() => onMoveTask(task.id, -1)}
+                                          className="text-[10px] bg-white/80 border border-sky-200 rounded px-1 py-0.5 hover:bg-sky-50 text-sky-800"
+                                        >↑−1ש</button>
+                                        <button
+                                          title="הזז שעה אחת קדימה"
+                                          onClick={() => onMoveTask(task.id, 1)}
+                                          className="text-[10px] bg-white/80 border border-sky-200 rounded px-1 py-0.5 hover:bg-sky-50 text-sky-800"
+                                        >↓+1ש</button>
+                                      </>
                                     )}
-                                    {builderMode && onRemoveSoldier && (
+                                    {onResizeTask && (
+                                      <>
+                                        <button
+                                          title="קצר סיום שעה אחת"
+                                          onClick={() => onResizeTask(task.id, -1)}
+                                          className="text-[10px] bg-white/80 border border-slate-200 rounded px-1 py-0.5 hover:bg-slate-50 text-slate-700"
+                                        >◀−1</button>
+                                        <button
+                                          title="האריך סיום שעה אחת"
+                                          onClick={() => onResizeTask(task.id, 1)}
+                                          className="text-[10px] bg-white/80 border border-slate-200 rounded px-1 py-0.5 hover:bg-slate-50 text-slate-700"
+                                        >▶+1</button>
+                                      </>
+                                    )}
+                                    {onDeleteTask && (
                                       <button
-                                        onClick={e => { e.stopPropagation(); onRemoveSoldier(task.id, s.id) }}
-                                        className="mr-1 opacity-40 hover:opacity-100 hover:text-red-500 leading-none"
-                                      >
-                                        ×
-                                      </button>
+                                        title="מחק משימה"
+                                        onClick={() => {
+                                          if (confirm('למחוק את המשימה ואת כל השיבוצים שלה?')) {
+                                            onDeleteTask(task.id)
+                                          }
+                                        }}
+                                        className="text-[10px] bg-red-50 border border-red-200 rounded px-1 py-0.5 hover:bg-red-100 text-red-600"
+                                      >🗑 מחק</button>
                                     )}
                                   </div>
-                                ))}
-                                {missing > 0 && (
-                                  <div className="text-orange-600 font-semibold">−{missing}</div>
                                 )}
-                                {commanderMissing && (
-                                  <div className="text-red-600 font-semibold">★?</div>
-                                )}
-                              </div>
                               </div>
                             </td>
                           )

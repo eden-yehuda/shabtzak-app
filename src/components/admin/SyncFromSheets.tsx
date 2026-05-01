@@ -261,14 +261,18 @@ export default function SyncFromSheets({
                     ))}
                   </div>
 
-                  {/* Assignment changes */}
+                  {/* Assignment changes — show full names, not IDs */}
                   {entry.status === 'updated' && (
                     <div className="mt-1 text-xs space-y-0.5">
                       {entry.addAssignments.length > 0 && (
-                        <div className="text-green-700">+ מצטרפים: {entry.addAssignments.join(', ')}</div>
+                        <div className="text-green-700">
+                          + מצטרפים: {entry.addAssignments.map(id => soldiers.find(s => s.id === id)?.full_name ?? id).join(', ')}
+                        </div>
                       )}
                       {entry.removeAssignments.length > 0 && (
-                        <div className="text-red-600">− מוסרים: {entry.removeAssignments.join(', ')}</div>
+                        <div className="text-red-600">
+                          − מוסרים: {entry.removeAssignments.map(id => soldiers.find(s => s.id === id)?.full_name ?? id).join(', ')}
+                        </div>
                       )}
                     </div>
                   )}
