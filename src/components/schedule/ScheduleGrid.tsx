@@ -306,11 +306,29 @@ export default function ScheduleGrid({
               </thead>
               <tbody>
                 {(() => {
+                  // Trim trailing empty rows: find the last row that has content
+                  let lastOccupiedRow = HOURS_PER_DAY - 1
+                  if (!builderMode) {
+                    let maxRow = -1
+                    for (const col of columns) {
+                      for (const rowIdxStr of Object.keys(taskAtRow[col])) {
+                        const ri = parseInt(rowIdxStr)
+                        const t = taskAtRow[col][ri]
+                        const span = (ri === 0 && overflowRowSpan[col] != null)
+                          ? overflowRowSpan[col]
+                          : Math.max(1, Math.round((t.end_datetime.getTime() - t.start_datetime.getTime()) / 3600000))
+                        maxRow = Math.max(maxRow, ri + span - 1)
+                      }
+                    }
+                    if (maxRow >= 0) lastOccupiedRow = Math.min(maxRow, HOURS_PER_DAY - 1)
+                  }
+                  const visibleHours = DAY_HOURS.slice(0, lastOccupiedRow + 1)
+
                   // Track if home block rendered (only once per section)
                   let homeBlockRendered = false
                   let returnBlockRendered = false
 
-                  return DAY_HOURS.map((hour, rowIndex) => {
+                  return visibleHours.map((hour, rowIndex) => {
                     // בית block: returning morning (rows 0..returnRowEnd)
                     if (myTasksOnly && soldierReturning && rowIndex <= returnRowEnd && !returnBlockRendered) {
                       returnBlockRendered = true

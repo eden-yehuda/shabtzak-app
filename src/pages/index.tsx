@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import Layout from '@/components/layout/Layout'
 import ScheduleGrid from '@/components/schedule/ScheduleGrid'
 import InquiryModal from '@/components/InquiryModal'
@@ -25,6 +25,8 @@ export default function HomePage() {
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [schedulesLoading, setSchedulesLoading] = useState(true)
   const [scheduleIdx, setScheduleIdx] = useState(0)
+  const defaultScheduleSet = useRef(false) // only auto-select current schedule once
+  const userNavigated = useRef(false) // user manually navigated — don't override
   const soldiers = useSoldiers()
   const finalLeave = useFinalLeave()
 
@@ -65,12 +67,26 @@ export default function HomePage() {
       const published = all.filter(s => s.status === 'published')
       setSchedules(published)
       setSchedulesLoading(false)
-      // Default to the schedule that contains today (not necessarily the most recent)
-      const today = new Date()
-      const currentIdx = published.findIndex(s => s.start_datetime <= today && s.end_datetime >= today)
-      if (currentIdx >= 0) setScheduleIdx(currentIdx)
     })
   }, [])
+
+  // Once schedules load, default to whichever schedule contains today.
+  // After that, never override the user's navigation.
+  useEffect(() => {
+    if (schedules.length === 0 || userNavigated.current || defaultScheduleSet.current) return
+    const now = new Date()
+    const idx = schedules.findIndex(s =>
+      s.start_datetime instanceof Date && s.end_datetime instanceof Date &&
+      s.start_datetime <= now && s.end_datetime >= now
+    )
+    if (idx >= 0) {
+      setScheduleIdx(idx)
+      defaultScheduleSet.current = true
+    } else if (!defaultScheduleSet.current) {
+      // No schedule contains today — fall back to most recent (index 0)
+      defaultScheduleSet.current = true
+    }
+  }, [schedules])
 
   const currentSchedule = schedules[scheduleIdx] ?? null
   const { tasks, assignments } = useScheduleTasks(currentSchedule?.id ?? null)
@@ -181,7 +197,7 @@ export default function HomePage() {
       {/* Schedule nav */}
       {schedules.length > 0 && (
         <div className="flex justify-between items-center mb-3">
-          <button onClick={() => setScheduleIdx(i => i + 1)} disabled={!canGoBack}
+          <button onClick={() => { userNavigated.current = true; setScheduleIdx(i => i + 1) }} disabled={!canGoBack}
             className="text-sm px-3 py-1 rounded-lg border border-slate-300 disabled:opacity-30 disabled:cursor-not-allowed">
             קודם →
           </button>
@@ -193,7 +209,7 @@ export default function HomePage() {
               </div>
             )}
           </div>
-          <button onClick={() => setScheduleIdx(i => i - 1)} disabled={!canGoForward}
+          <button onClick={() => { userNavigated.current = true; setScheduleIdx(i => i - 1) }} disabled={!canGoForward}
             className="text-sm px-3 py-1 rounded-lg border border-slate-300 disabled:opacity-30 disabled:cursor-not-allowed">
             ← הבא
           </button>
