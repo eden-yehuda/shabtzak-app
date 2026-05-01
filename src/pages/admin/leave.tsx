@@ -43,6 +43,12 @@ function dayLabel(dateStr: string) {
   return `${dayNames[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
 }
 
+interface SyncResult {
+  added: { soldierName: string; date: string }[]
+  skipped: { soldierName: string; date: string; reason: string }[]
+  unmatched: string[]
+}
+
 export default function AdminLeavePage() {
   const soldiers = useSoldiers(false)
   const allRequests = useLeaveRequests()
@@ -51,6 +57,8 @@ export default function AdminLeavePage() {
   const [draftFrom, setDraftFrom] = useState('')
   const [draftTo, setDraftTo] = useState('')
   const [draftMaxDays, setDraftMaxDays] = useState(3)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
 
   useEffect(() => {
     return onSnapshot(doc(db, 'settings', 'leave_survey'), snap => {
@@ -117,9 +125,72 @@ export default function AdminLeavePage() {
 
   const totalPending = soldierRequests.filter(r => r.status === 'pending').length
 
+  async function syncFromSheet() {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const res = await fetch('/.netlify/functions/fetch-leave-sheet')
+      const data = await res.json()
+      if (data.error) { alert(`שגיאה: ${data.error}`); return }
+
+      const entries: { soldierName: string; date: string }[] = data.entries
+      const added: SyncResult['added'] = []
+      const skipped: SyncResult['skipped'] = []
+      const unmatchedSet = new Set<string>()
+
+      for (const entry of entries) {
+        // Match soldier by exact full_name, fallback to word match
+        let soldier = soldiers.find(s => s.full_name === entry.soldierName)
+        if (!soldier) {
+          soldier = soldiers.find(s =>
+            s.full_name.split(' ').some(part => entry.soldierName.includes(part) && part.length >= 2) ||
+            entry.soldierName.split(' ').some(part => s.full_name.includes(part) && part.length >= 2)
+          )
+        }
+        if (!soldier) { unmatchedSet.add(entry.soldierName); continue }
+
+        const alreadyApproved = finalLeave.some(r => r.soldier_id === soldier!.id && r.date === entry.date)
+        if (alreadyApproved) {
+          skipped.push({ soldierName: entry.soldierName, date: entry.date, reason: 'כבר מאושר' })
+          continue
+        }
+
+        // Promote pending → approved, or create new
+        const pending = soldierRequests.find(r => r.soldier_id === soldier!.id && r.date === entry.date && r.status === 'pending')
+        if (pending) {
+          await updateDoc(doc(db, 'leave_requests', pending.id), { is_final: true, status: 'approved' })
+        } else {
+          await addDoc(leaveRequestsRef(), {
+            soldier_id: soldier.id,
+            date: entry.date,
+            status: 'approved',
+            is_final: true,
+            created_at: new Date(),
+          })
+        }
+        added.push({ soldierName: soldier.full_name, date: entry.date })
+      }
+
+      setSyncResult({ added, skipped, unmatched: Array.from(unmatchedSet) })
+    } catch (e) {
+      alert('שגיאה בסנכרון: ' + String(e))
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   return (
     <AdminLayout>
-      <h1 className="text-xl font-bold text-navy mb-4">ניהול יציאות</h1>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
+        <h1 className="text-xl font-bold text-navy">ניהול יציאות</h1>
+        <button
+          onClick={syncFromSheet}
+          disabled={syncing}
+          className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-40"
+        >
+          {syncing ? '⏳ מסנכרן...' : '📊 סנכרון מגיליון'}
+        </button>
+      </div>
 
       {/* Survey control */}
       <div className={`rounded-xl p-4 mb-5 border ${survey?.is_open ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-200'}`}>
@@ -165,6 +236,37 @@ export default function AdminLeavePage() {
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-4 flex items-center gap-2 text-sm text-amber-800">
           <span className="text-base">⚠️</span>
           <span>שים לב: <strong>{totalPending}</strong> בקשות ממתינות לאישור — לחץ על <strong>!</strong> כדי לאשר</span>
+        </div>
+      )}
+
+      {/* Sync result */}
+      {syncResult && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 text-sm" dir="rtl">
+          <div className="flex justify-between items-start">
+            <div className="font-bold text-blue-800 mb-2">📊 תוצאות סנכרון מגיליון</div>
+            <button onClick={() => setSyncResult(null)} className="text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
+          </div>
+          {syncResult.added.length > 0 && (
+            <div className="mb-2">
+              <span className="text-green-700 font-semibold">✓ נוספו {syncResult.added.length} יציאות:</span>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {syncResult.added.map((e, i) => (
+                  <span key={i} className="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded-full">
+                    {e.soldierName} · {e.date.slice(5).replace('-', '/')}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {syncResult.unmatched.length > 0 && (
+            <div className="text-amber-700">
+              <span className="font-semibold">⚠️ לא זוהו ({syncResult.unmatched.length}):</span>{' '}
+              {syncResult.unmatched.join(', ')}
+            </div>
+          )}
+          {syncResult.added.length === 0 && syncResult.unmatched.length === 0 && (
+            <span className="text-slate-600">אין שינויים — הכל מסונכרן.</span>
+          )}
         </div>
       )}
 
