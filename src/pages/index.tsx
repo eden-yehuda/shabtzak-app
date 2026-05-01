@@ -62,8 +62,13 @@ export default function HomePage() {
         end_datetime: d.data().end_datetime?.toDate(),
         updated_at: d.data().updated_at?.toDate(),
       } as Schedule))
-      setSchedules(all.filter(s => s.status === 'published'))
+      const published = all.filter(s => s.status === 'published')
+      setSchedules(published)
       setSchedulesLoading(false)
+      // Default to the schedule that contains today (not necessarily the most recent)
+      const today = new Date()
+      const currentIdx = published.findIndex(s => s.start_datetime <= today && s.end_datetime >= today)
+      if (currentIdx >= 0) setScheduleIdx(currentIdx)
     })
   }, [])
 
@@ -165,6 +170,13 @@ export default function HomePage() {
         </div>
         {showDropdown && <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} />}
       </div>
+
+      {/* Banner: future schedule available */}
+      {scheduleIdx > 0 && schedules.length > 1 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2 mb-3 text-sm text-blue-800 text-center">
+          📅 פורסם שבצ&quot;ק לשבוע הבא — ניתן לדפדף ולהציג אותו
+        </div>
+      )}
 
       {/* Schedule nav */}
       {schedules.length > 0 && (

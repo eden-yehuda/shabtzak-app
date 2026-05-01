@@ -3,6 +3,8 @@ import { useLeaveCountByDate } from '@/hooks/useLeaveRequests'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useSchedules } from '@/hooks/useSchedules'
 import Link from 'next/link'
+import { deleteDoc, doc, getDocs, query, where, collection } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
 
 function isoDate(d: Date) {
   return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
@@ -16,6 +18,22 @@ export default function AdminDashboard() {
   const today = new Date().toISOString().slice(0, 10)
   const todayCount = leaveCountByDate[today] || 0
   const available = soldiers.length - todayCount
+
+  async function deleteSchedule(id: string, name: string) {
+    if (!window.confirm(`למחוק את "${name}"? פעולה זו תמחק גם את כל המשימות והשיבוצים שלו.`)) return
+    try {
+      // Delete tasks and their assignments
+      const tasksSnap = await getDocs(query(collection(db, 'tasks'), where('schedule_id', '==', id)))
+      for (const t of tasksSnap.docs) {
+        const assignSnap = await getDocs(query(collection(db, 'assignments'), where('task_id', '==', t.id)))
+        for (const a of assignSnap.docs) await deleteDoc(doc(db, 'assignments', a.id))
+        await deleteDoc(doc(db, 'tasks', t.id))
+      }
+      await deleteDoc(doc(db, 'schedules', id))
+    } catch (e) {
+      alert('שגיאה במחיקה: ' + String(e))
+    }
+  }
 
   return (
     <AdminLayout>
@@ -57,24 +75,31 @@ export default function AdminDashboard() {
         ) : (
           <div className="space-y-2" dir="rtl">
             {schedules.map(s => (
-              <Link key={s.id} href={`/admin/schedule/${s.id}`}>
-                <div className="bg-white rounded-xl px-5 py-3.5 shadow-sm border border-slate-100 flex justify-between items-center hover:border-navy transition cursor-pointer">
-                  <div>
-                    <div className="font-semibold text-navy text-sm">{s.name}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">
-                      {isoDate(s.start_datetime)} – {isoDate(s.end_datetime)}
-                    </div>
+              <div key={s.id} className="bg-white rounded-xl px-5 py-3.5 shadow-sm border border-slate-100 flex justify-between items-center hover:border-navy transition">
+                <Link href={`/admin/schedule/${s.id}`} className="flex-1 min-w-0">
+                  <div className="font-semibold text-navy text-sm">{s.name}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    {isoDate(s.start_datetime)} – {isoDate(s.end_datetime)}
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
-                      s.status === 'published' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                      {s.status === 'published' ? '✓ מפורסם' : 'טיוטה'}
-                    </span>
+                </Link>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
+                    s.status === 'published' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {s.status === 'published' ? '✓ מפורסם' : 'טיוטה'}
+                  </span>
+                  <Link href={`/admin/schedule/${s.id}`}>
                     <span className="text-navy text-sm">✏️</span>
-                  </div>
+                  </Link>
+                  <button
+                    onClick={() => deleteSchedule(s.id, s.name)}
+                    className="text-red-400 hover:text-red-600 text-sm transition"
+                    title="מחק שבצ&quot;ק"
+                  >
+                    🗑
+                  </button>
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
         )}

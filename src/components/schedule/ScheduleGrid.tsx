@@ -18,12 +18,13 @@ interface Props {
   onMoveTaskToSlot?: (taskId: string, date: string, hour: number) => void
 }
 
-// Visual order right-to-left (RTL): כ"כ א → כ"כ ב → אחורית → ש"ג → של"ז
-const COLUMN_ORDER = ['כ"כ א', 'כ"כ ב', 'אחורית', 'ש"ג', 'של"ז']
+// Visual order right-to-left (RTL)
+const COLUMN_ORDER = ['סיור', 'כוננות', 'כ"כ א', 'כ"כ ב', 'אחורית', 'ש"ג', 'של"ז']
 
-// Colors per column type: [header bg+text, card bg, card border, card text]
-// "Ash" palette — muted, unified family, same L/S, only hue shifts
+// Colors per column type
 const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: string; cardBorder: string; cardText: string; mineBg: string }> = {
+  'סיור':    { headBg: '#3B6E52', headText: '#fff', cardBg: '#E8F5EE', cardBorder: '#A8D5BC', cardText: '#1A3D2A', mineBg: '#2D5540' },
+  'כוננות':  { headBg: '#4A5E88', headText: '#fff', cardBg: '#EAF0F8', cardBorder: '#B0C4E4', cardText: '#1A2D50', mineBg: '#38507A' },
   'כ"כ א':  { headBg: '#516B85', headText: '#fff', cardBg: '#EEF2F7', cardBorder: '#C4D3E3', cardText: '#1E3550', mineBg: '#3A5470' },
   'כ"כ ב':  { headBg: '#40787A', headText: '#fff', cardBg: '#EAF4F4', cardBorder: '#B5D5D5', cardText: '#153A3A', mineBg: '#2E6062' },
   'אחורית': { headBg: '#7A6652', headText: '#fff', cardBg: '#F4EFE7', cardBorder: '#D8CBBA', cardText: '#3D2E18', mineBg: '#61503E' },
@@ -408,10 +409,13 @@ export default function ScheduleGrid({
                           const missing = task.required_people_count - assigned.length
                           const commanderMissing = task.requires_commander && !assigned.some(s => s.is_commander)
 
+                          const isMachlaket3 = task.notes === 'מחלקה 3'
                           const isSelected = task.id === selectedTaskId
                           let cardExtraClass = ''
                           let cardStyle: React.CSSProperties = {}
-                          if (isSelected) {
+                          if (isMachlaket3) {
+                            cardStyle = { backgroundColor: 'rgba(203,213,225,0.35)', borderColor: 'rgba(148,163,184,0.5)', color: '#64748b' }
+                          } else if (isSelected) {
                             cardExtraClass = 'bg-sky-100 border-sky-400 ring-2 ring-sky-400'
                           } else if (commanderMissing) {
                             cardExtraClass = 'bg-red-100 border-red-400 text-red-900'
@@ -451,35 +455,41 @@ export default function ScheduleGrid({
                               >
                                 <div className="space-y-0.5">
                                   <div className="text-[9px] mb-0.5 opacity-60">{timeLabel}</div>
-                                  {assigned.map((s, idx) => (
-                                    <div
-                                      key={s.id}
-                                      className={`text-xs leading-snug flex items-center justify-center gap-0.5 ${idx === 0 ? 'font-bold' : ''}`}
-                                    >
-                                      <span>{s.full_name}</span>
-                                      {s.note && (
-                                        <span
-                                          title={s.note}
-                                          className="inline-flex items-center text-[9px] font-semibold px-1 py-0 rounded cursor-default select-none bg-white/40"
+                                  {isMachlaket3 ? (
+                                    <div className="text-xs font-semibold text-slate-500">מחלקה 3</div>
+                                  ) : (
+                                    <>
+                                      {assigned.map((s, idx) => (
+                                        <div
+                                          key={s.id}
+                                          className={`text-xs leading-snug flex items-center justify-center gap-0.5 ${idx === 0 ? 'font-bold' : ''}`}
                                         >
-                                          {s.note}
-                                        </span>
+                                          <span>{s.full_name}</span>
+                                          {s.note && (
+                                            <span
+                                              title={s.note}
+                                              className="inline-flex items-center text-[9px] font-semibold px-1 py-0 rounded cursor-default select-none bg-white/40"
+                                            >
+                                              {s.note}
+                                            </span>
+                                          )}
+                                          {builderMode && onRemoveSoldier && (
+                                            <button
+                                              onClick={e => { e.stopPropagation(); onRemoveSoldier(task.id, s.id) }}
+                                              className="mr-1 opacity-40 hover:opacity-100 hover:text-red-500 leading-none"
+                                            >
+                                              ×
+                                            </button>
+                                          )}
+                                        </div>
+                                      ))}
+                                      {missing > 0 && (
+                                        <div className="text-orange-600 font-semibold">−{missing}</div>
                                       )}
-                                      {builderMode && onRemoveSoldier && (
-                                        <button
-                                          onClick={e => { e.stopPropagation(); onRemoveSoldier(task.id, s.id) }}
-                                          className="mr-1 opacity-40 hover:opacity-100 hover:text-red-500 leading-none"
-                                        >
-                                          ×
-                                        </button>
+                                      {commanderMissing && (
+                                        <div className="text-red-600 font-semibold">★?</div>
                                       )}
-                                    </div>
-                                  ))}
-                                  {missing > 0 && (
-                                    <div className="text-orange-600 font-semibold">−{missing}</div>
-                                  )}
-                                  {commanderMissing && (
-                                    <div className="text-red-600 font-semibold">★?</div>
+                                    </>
                                   )}
                                 </div>
 
