@@ -5,6 +5,7 @@ import AdminLayout from '@/components/layout/AdminLayout'
 import ScheduleGrid from '@/components/schedule/ScheduleGrid'
 import SoldierPanel from '@/components/admin/SoldierPanel'
 import TaskModal from '@/components/admin/TaskModal'
+import SyncFromSheets from '@/components/admin/SyncFromSheets'
 import ValidationPanel from '@/components/admin/ValidationPanel'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import { useSoldiers } from '@/hooks/useSoldiers'
@@ -41,6 +42,7 @@ export default function NewSchedule() {
   const { tasks, assignments } = useScheduleTasks(scheduleId)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [showTaskModal, setShowTaskModal] = useState(false)
+  const [showSyncModal, setShowSyncModal] = useState(false)
 
   // Validation
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
@@ -149,6 +151,11 @@ export default function NewSchedule() {
             + הוסף משימה
           </button>
 
+          <button onClick={() => setShowSyncModal(true)}
+            className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition">
+            📊 סנכרון שבצ&quot;ק
+          </button>
+
           {/* Live validation badge */}
           <button onClick={() => setShowValidation(v => !v)}
             className={`rounded-xl px-4 py-2 text-sm font-semibold border transition ${
@@ -233,6 +240,18 @@ export default function NewSchedule() {
           scheduleStart={scheduleStart}
           scheduleEnd={scheduleEnd}
           onClose={() => setShowTaskModal(false)}
+        />
+      )}
+
+      {showSyncModal && (
+        <SyncFromSheets
+          scheduleId={scheduleId}
+          scheduleStart={scheduleStart}
+          scheduleEnd={scheduleEnd}
+          soldiers={soldiers}
+          tasks={tasks}
+          assignments={assignments}
+          onClose={() => setShowSyncModal(false)}
         />
       )}
 
