@@ -150,6 +150,14 @@ export interface DiffEntry {
   removeAssignments: string[] // soldierIds to remove
 }
 
+function localIsoDate(d: Date): string {
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
 export function diffBlocks(
   blocks: SheetBlock[],
   tasks: Task[],
@@ -157,17 +165,19 @@ export function diffBlocks(
   scheduleId: string
 ): DiffEntry[] {
   return blocks.map(block => {
-    const blockStart = new Date(`${block.date}T${String(block.startHour).padStart(2, '0')}:00`)
-    const blockEnd = new Date(`${block.date}T${String(block.endHour).padStart(2, '0')}:00`)
-    if (block.endHour === 0) blockEnd.setDate(blockEnd.getDate() + 1)
+    const blockStart = new Date(`${block.date}T${String(block.startHour).padStart(2, '0')}:00:00`)
+    const endHour = block.endHour === 24 ? 0 : block.endHour
+    const blockEnd = new Date(`${block.date}T${String(endHour).padStart(2, '0')}:00:00`)
+    if (block.endHour >= 24 || (block.endHour === 0 && block.startHour > 0)) {
+      blockEnd.setDate(blockEnd.getDate() + 1)
+    }
 
-    // Find matching task: same scheduleId, taskType, date, overlapping time
+    // Find matching task: same scheduleId, taskType, LOCAL date, start within ±1h
+    // IMPORTANT: use local date (not toISOString which is UTC) — fixes tasks at 00:00–02:59
     const match = tasks.find(t => {
       if (t.schedule_id !== scheduleId) return false
       if (t.task_type !== block.taskType) return false
-      const tDate = t.start_datetime.toISOString().slice(0, 10)
-      if (tDate !== block.date) return false
-      // Overlap check (start within ±1h tolerance)
+      if (localIsoDate(t.start_datetime) !== block.date) return false
       const startDiff = Math.abs(t.start_datetime.getTime() - blockStart.getTime())
       return startDiff <= 3600 * 1000
     })

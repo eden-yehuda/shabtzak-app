@@ -3,7 +3,7 @@ import AdminLayout from '@/components/layout/AdminLayout'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useLeaveRequests } from '@/hooks/useLeaveRequests'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
-import { addDoc, deleteDoc, doc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore'
+import { addDoc, deleteDoc, doc, updateDoc, setDoc, onSnapshot, getDocs, query, where } from 'firebase/firestore'
 import { leaveRequestsRef } from '@/lib/firestore'
 import { db } from '@/lib/firebase'
 import { matchSoldierName } from '@/utils/sheetParser'
@@ -169,11 +169,16 @@ export default function AdminLeavePage() {
       }
 
       // 3. Build Firestore current map: date → Map<soldierId, recordId>
+      //    Query fresh from Firestore (avoids stale React state)
+      const freshSnap = await getDocs(
+        query(leaveRequestsRef(), where('is_final', '==', true), where('status', '==', 'approved'))
+      )
       const currentMap = new Map<string, Map<string, string>>()
-      for (const lr of finalLeave) {
+      for (const d of freshSnap.docs) {
+        const lr = d.data() as { date: string; soldier_id: string }
         if (!sheetDates.includes(lr.date)) continue
         if (!currentMap.has(lr.date)) currentMap.set(lr.date, new Map())
-        currentMap.get(lr.date)!.set(lr.soldier_id, lr.id)
+        currentMap.get(lr.date)!.set(lr.soldier_id, d.id)
       }
 
       // 4. Bidirectional diff

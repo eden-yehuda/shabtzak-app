@@ -57,6 +57,7 @@ export default function SyncFromSheets({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [diff, setDiff] = useState<DiffEntry[] | null>(null)
+  const [syncWarnings, setSyncWarnings] = useState<string[]>([])
   const [applying, setApplying] = useState(false)
   const [applied, setApplied] = useState(false)
 
@@ -83,6 +84,18 @@ export default function SyncFromSheets({
       const blocks = groupIntoBlocks(rows)
       const resolved = resolveBlocks(blocks, soldiers)
       const entries = diffBlocks(resolved, tasks, assignments, scheduleId)
+
+      // Warn if first soldier in a block is not a commander
+      const warnings: string[] = []
+      for (const entry of entries) {
+        if (entry.block.soldierIds.length === 0) continue
+        const hasCommander = entry.block.soldierIds.some(id => soldiers.find(s => s.id === id)?.is_commander)
+        if (!hasCommander) {
+          const names = entry.block.soldierIds.map(id => soldiers.find(s => s.id === id)?.full_name ?? id)
+          warnings.push(`⚠️ אין מפקד ב: ${entry.block.taskType} ${entry.block.date} ${entry.block.startHour}:00 (${names.join(', ')})`)
+        }
+      }
+      setSyncWarnings(warnings)
       setDiff(entries)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'שגיאה לא ידועה')
@@ -120,10 +133,20 @@ export default function SyncFromSheets({
             notes: '',
           })
           taskId = ref.id
+          let commanderAssigned = false
+          let nonCmdOrder = 1
           for (let i = 0; i < entry.block.soldierIds.length; i++) {
             const sid = entry.block.soldierIds[i]
             const note = entry.block.soldierIdNotes?.[i] ?? undefined
-            await createAssignment(taskId, sid, note || undefined)
+            const isCommander = soldiers.find(s => s.id === sid)?.is_commander ?? false
+            let order: number
+            if (!commanderAssigned && isCommander) {
+              order = 0
+              commanderAssigned = true
+            } else {
+              order = nonCmdOrder++
+            }
+            await createAssignment(taskId, sid, order, note || undefined)
           }
         } else if (entry.status === 'updated' && taskId) {
           // Remove old assignments
@@ -140,11 +163,13 @@ export default function SyncFromSheets({
               }
             }
           }
-          // Add new assignments (with notes)
+          // Add new assignments (with notes and order)
           for (const sid of entry.addAssignments) {
             const idxInBlock = entry.block.soldierIds.indexOf(sid)
             const note = idxInBlock >= 0 ? (entry.block.soldierIdNotes?.[idxInBlock] ?? undefined) : undefined
-            await createAssignment(taskId, sid, note || undefined)
+            const isCommander = soldiers.find(s => s.id === sid)?.is_commander ?? false
+            const order = isCommander ? 0 : idxInBlock >= 0 ? idxInBlock : 1
+            await createAssignment(taskId, sid, order, note || undefined)
           }
         }
       }
@@ -240,6 +265,16 @@ export default function SyncFromSheets({
                   <span className="text-green-700 font-semibold">{'✓ השבצ"ק מסונכרן — אין שינויים'}</span>
                 )}
               </div>
+
+              {/* Commander warnings */}
+              {syncWarnings.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-3 text-xs space-y-1">
+                  <div className="font-bold text-red-700 mb-1">🚨 שגיאות מפקדים:</div>
+                  {syncWarnings.map((w, i) => (
+                    <div key={i} className="text-red-600">{w}</div>
+                  ))}
+                </div>
+              )}
 
               {/* Entries */}
               {diff.filter(e => e.status !== 'same').map((entry, i) => (

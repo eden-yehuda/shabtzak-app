@@ -99,12 +99,14 @@ export default function HomePage() {
   const canGoForward = scheduleIdx > 0
 
   const visibleTasks = useMemo(() => {
+    // Never show עתודה in the published soldier-facing view
+    let filtered = tasks.filter(t => t.task_type !== 'עתודה')
     if (myTasksOnly && selectedSoldierId) {
-      return tasks.filter(t =>
+      filtered = filtered.filter(t =>
         assignments.some(a => a.task_id === t.id && a.soldier_id === selectedSoldierId)
       )
     }
-    return tasks
+    return filtered
   }, [tasks, assignments, myTasksOnly, selectedSoldierId])
 
   const navActions = (
