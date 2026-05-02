@@ -156,6 +156,11 @@ export default function ScheduleGrid({
       const s = soldierMap[a.soldier_id]
       if (s) result.push({ ...s, note: a.note, alternating_group: a.alternating_group })
     }
+    // If any commander is assigned, commanders always appear first
+    const hasCommander = result.some(s => s.is_commander)
+    if (hasCommander) {
+      result.sort((a, b) => (a.is_commander ? 0 : 1) - (b.is_commander ? 0 : 1))
+    }
     return result
   }
 
