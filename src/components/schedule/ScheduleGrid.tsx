@@ -19,6 +19,7 @@ interface Props {
   onMoveTaskToSlot?: (taskId: string, date: string, hour: number) => void
   onPairSoldiers?: (taskId: string, soldierIdA: string, soldierIdB: string) => void
   onUnpairSoldier?: (taskId: string, soldierId: string) => void
+  onDeleteColumn?: (taskType: string) => void
 }
 
 // Visual order right-to-left (RTL)
@@ -69,7 +70,7 @@ export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
   currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, onSelectTask, onRemoveSoldier,
   onMoveTask, onResizeTask, onDeleteTask, onMoveTaskToSlot,
-  onPairSoldiers, onUnpairSoldier,
+  onPairSoldiers, onUnpairSoldier, onDeleteColumn,
 }: Props) {
   const DAY_START_HOUR = dayStartHour
   const DAY_HOURS = Array.from({ length: HOURS_PER_DAY }, (_, i) => (i + DAY_START_HOUR) % HOURS_PER_DAY)
@@ -345,7 +346,18 @@ export default function ScheduleGrid({
                   {columns.map(col => {
                     const cs = COL_STYLE[col] ?? DEFAULT_COL_STYLE
                     return (
-                      <th key={col} className="border border-slate-300 px-1 py-1.5 text-center text-xs font-bold" style={{ backgroundColor: cs.headBg, color: cs.headText }}>{col}</th>
+                      <th key={col} className="border border-slate-300 px-1 py-1.5 text-center text-xs font-bold relative" style={{ backgroundColor: cs.headBg, color: cs.headText }}>
+                        {col}
+                        {builderMode && onDeleteColumn && (
+                          <button
+                            onClick={() => onDeleteColumn(col)}
+                            className="absolute top-0.5 left-0.5 text-[9px] opacity-40 hover:opacity-100"
+                            title={`מחק עמודת ${col}`}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </th>
                     )
                   })}
                 </tr>

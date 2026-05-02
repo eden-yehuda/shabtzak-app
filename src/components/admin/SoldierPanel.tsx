@@ -9,7 +9,7 @@ interface Props {
   tasks: Task[]
   finalLeave: LeaveRequest[]
   selectedTaskId: string | null
-  onAssigned?: () => void
+  onAssigned?: (taskId: string, soldierId: string) => Promise<void>
 }
 
 type StatusFilter = 'all' | 'present' | 'home' | 'returning' | 'leaving'
@@ -61,8 +61,18 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
       if (prev.length > 0) restHours = hoursGap(prev[0].end_datetime, selectedTask.start_datetime)
     }
 
+    // Check if soldier has a concurrent (overlapping) task
+    let isConcurrent = false
+    if (selectedTask) {
+      isConcurrent = myTasks.some(t =>
+        t.id !== selectedTaskId &&
+        t.start_datetime < selectedTask.end_datetime &&
+        t.end_datetime > selectedTask.start_datetime
+      )
+    }
+
     const status = getSoldierStatus(s, taskDate, finalLeave)
-    return { soldier: s, taskCount, isAssignedToSelected, restHours, status }
+    return { soldier: s, taskCount, isAssignedToSelected, restHours, status, isConcurrent }
   }), [soldiers, assignments, tasks, selectedTaskId, selectedTask, taskDate, finalLeave])
 
   const statusPriority = (label: string) => {
@@ -102,7 +112,7 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
       setIsSubmitting(true)
       try {
         await createAssignment(selectedTaskId, soldierId)
-        onAssigned?.()
+        await onAssigned?.(selectedTaskId, soldierId)
       }
       catch (err) { console.error(err) }
       finally { setIsSubmitting(false) }
@@ -135,14 +145,14 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
         ))}
       </div>
 
-      <div className="space-y-1 overflow-y-auto flex-1">
-        {filtered.map(({ soldier, taskCount, isAssignedToSelected, restHours, status }) => {
+      <div className="grid grid-cols-2 gap-1 overflow-y-auto flex-1 content-start">
+        {filtered.map(({ soldier, taskCount, isAssignedToSelected, restHours, status, isConcurrent }) => {
           const isHome = status.label === 'בית'
           return (
             <button key={soldier.id} type="button"
               onClick={() => !isHome && assign(soldier.id)}
               disabled={!selectedTaskId || isAssignedToSelected || isHome}
-              className={`w-full flex justify-between items-center px-2.5 py-2 rounded-lg border transition text-sm ${
+              className={`w-full flex justify-between items-center px-2 py-1.5 rounded-lg border transition text-sm ${
                 isAssignedToSelected ? 'bg-blue-50 border-blue-300 text-blue-700' :
                 isHome ? 'bg-slate-50 border-slate-100 text-slate-400 cursor-default opacity-60' :
                 !selectedTaskId ? 'bg-slate-50 border-slate-100 cursor-default' :
@@ -152,9 +162,14 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
                 {soldier.is_commander && <span className="text-navy text-xs">★</span>}
                 <span className="font-medium truncate">{soldier.full_name}</span>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
                 {restHours !== null && restHours < 8 && (
                   <span className="text-[10px] text-orange-600 font-semibold">{restHours.toFixed(0)}ש׳</span>
+                )}
+                {isConcurrent && (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-orange-700 bg-orange-50">
+                    בו-זמני
+                  </span>
                 )}
                 <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${status.color}`}>
                   {status.label}

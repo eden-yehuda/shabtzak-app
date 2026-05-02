@@ -14,7 +14,7 @@ import { useScheduleTasks } from '@/hooks/useSchedule'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
 import { useSchedule } from '@/hooks/useSchedules'
 import { validateSchedule } from '@/utils/validation'
-import { deleteAssignment, updateAssignment } from '@/lib/firestore'
+import { deleteAssignment, updateAssignment, createAssignment } from '@/lib/firestore'
 import type { ValidationError } from '@/types'
 
 export default function EditSchedule() {
@@ -43,6 +43,13 @@ export default function EditSchedule() {
     setValidationErrors(errors)
     setLlmChecked(false)
   }, [tasks, assignments, soldiers, finalLeave, scheduleId])
+
+  // Auto-unpublish when opening edit page of published schedule
+  useEffect(() => {
+    if (!scheduleId || schedule?.status !== 'published') return
+    updateDoc(doc(db, 'schedules', scheduleId), { status: 'draft', updated_at: serverTimestamp() })
+      .catch(() => {})
+  }, [schedule?.id]) // only runs when schedule ID changes (i.e., on load)
 
   async function runLlmCheck() {
     if (!schedule) return
@@ -120,6 +127,22 @@ export default function EditSchedule() {
       if (selectedTaskId === taskId) setSelectedTaskId(null)
       await touchSchedule()
     } catch { alert('שגיאה במחיקת משימה') }
+  }
+
+  async function handleDeleteColumn(taskType: string) {
+    if (!scheduleId) return
+    if (!confirm(`למחוק את כל משימות "${taskType}" מהשבצ"ק?`)) return
+    const typeTasks = tasks.filter(t => t.task_type === taskType)
+    try {
+      await Promise.all(typeTasks.flatMap(task => {
+        const taskAssigns = assignments.filter(a => a.task_id === task.id)
+        return [
+          ...taskAssigns.map(a => deleteAssignment(a.id)),
+          deleteDoc(doc(db, 'tasks', task.id)),
+        ]
+      }))
+      await touchSchedule()
+    } catch { alert('שגיאה במחיקת עמודה') }
   }
 
   async function handleMoveTaskToSlot(taskId: string, date: string, hour: number) {
@@ -269,6 +292,7 @@ export default function EditSchedule() {
                 onResizeTask={handleResizeTask}
                 onDeleteTask={handleDeleteTask}
                 onMoveTaskToSlot={handleMoveTaskToSlot}
+                onDeleteColumn={handleDeleteColumn}
                 onPairSoldiers={async (taskId, soldierIdA, soldierIdB) => {
                   const taskAssigns = assignments.filter(a => a.task_id === taskId)
                   const maxGroup = Math.max(0, ...taskAssigns.map(a => a.alternating_group ?? 0))
@@ -301,7 +325,20 @@ export default function EditSchedule() {
             tasks={tasks}
             finalLeave={finalLeave}
             selectedTaskId={selectedTaskId}
-            onAssigned={touchSchedule}
+            onAssigned={async (taskId: string, soldierId: string) => {
+              await touchSchedule()
+              // Auto-assign to כ"כ ג when assigning to סיור
+              const assignedTask = tasks.find(t => t.id === taskId)
+              if (assignedTask?.task_type === 'סיור') {
+                const kkkG = tasks.find(t =>
+                  t.task_type === 'כ"כ ג' &&
+                  t.start_datetime.getTime() === assignedTask.start_datetime.getTime()
+                )
+                if (kkkG && !assignments.some(a => a.task_id === kkkG.id && a.soldier_id === soldierId)) {
+                  await createAssignment(kkkG.id, soldierId)
+                }
+              }
+            }}
           />
         </div>
       </div>
