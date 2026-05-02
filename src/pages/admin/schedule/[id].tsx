@@ -86,7 +86,12 @@ export default function EditSchedule() {
       const res = await fetch('/.netlify/functions/validate-schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduleName: schedule.name, tasks, assignments, soldiers, finalLeave }),
+        body: JSON.stringify({
+          scheduleName: schedule.name,
+          tasks, assignments, soldiers, finalLeave,
+          dayStartHour: schedule.day_start_hour ?? 2,
+          homeLeaveHour: schedule.home_leave_hour,
+        }),
       })
       const data = await res.json()
       if (data.error) setLlmResult(`⚠️ ${data.error}`)
