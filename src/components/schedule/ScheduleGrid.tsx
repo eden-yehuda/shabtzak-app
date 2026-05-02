@@ -331,7 +331,7 @@ export default function ScheduleGrid({
                   // Trim leading/trailing empty rows using dayTasks directly
                   let firstOccupiedRow = 0
                   let lastOccupiedRow = HOURS_PER_DAY - 1
-                  if (!builderMode && dayTasks.length > 0) {
+                  if (dayTasks.length > 0) {
                     const startRows = dayTasks.map(t => hourToRowIndex(t.start_datetime.getHours()))
                     const endRows = dayTasks.map(t => {
                       const sr = hourToRowIndex(t.start_datetime.getHours())
@@ -339,7 +339,8 @@ export default function ScheduleGrid({
                       return Math.min(sr + dur - 1, HOURS_PER_DAY - 1)
                     })
                     firstOccupiedRow = Math.min(...startRows)
-                    lastOccupiedRow = Math.min(Math.max(...endRows), HOURS_PER_DAY - 1)
+                    // In builder mode keep bottom open so new tasks can be placed; in view mode trim bottom too
+                    if (!builderMode) lastOccupiedRow = Math.min(Math.max(...endRows), HOURS_PER_DAY - 1)
                   }
                   const visibleHours = DAY_HOURS.slice(firstOccupiedRow, lastOccupiedRow + 1)
 
