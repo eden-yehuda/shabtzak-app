@@ -130,20 +130,14 @@ export default function ScheduleGrid({
     return { days: sortedDays, allColumns: cols }
   }, [tasks, finalLeave, myTasksOnly, currentSoldierId])
 
-  // For the time line: if nowMilitaryDay isn't in the schedule grid (e.g. before schedule starts,
-  // or current time is pre-dayStart so military day is yesterday which isn't displayed),
-  // fall back to the current calendar day at DAY_START_HOUR.
+  // Time line: show only when nowMilitaryDay is actually in the grid.
+  // If we're before the schedule starts (e.g. 00:31 on day 1 when schedule starts at 14:00),
+  // nowMilitaryDay is yesterday (not in grid) — don't show the line at all.
   const nowLineDay = useMemo(() => {
-    if (days.includes(nowMilitaryDay)) return nowMilitaryDay
-    const calToday = isoDate(now)
-    if (days.includes(calToday)) return calToday
-    return nowMilitaryDay // fallback: line won't show (day not in grid)
-  }, [nowMilitaryDay, days, now])
+    return days.includes(nowMilitaryDay) ? nowMilitaryDay : ''
+  }, [nowMilitaryDay, days])
 
-  const nowLineHour = useMemo(() => {
-    if (days.includes(nowMilitaryDay)) return now.getHours()
-    return DAY_START_HOUR // show at start of military day column when falling back
-  }, [nowMilitaryDay, days, now, DAY_START_HOUR])
+  const nowLineHour = useMemo(() => now.getHours(), [now])
 
   // Auto-collapse past days when day list becomes known
   useEffect(() => {
