@@ -40,6 +40,7 @@ export interface Task {
   required_people_count: number
   requires_commander: boolean
   notes?: string
+  time_display?: string  // optional override for the displayed time label (e.g. "08:00–20:00")
 }
 
 export interface Assignment {

@@ -448,7 +448,7 @@ export default function ScheduleGrid({
                                 (task.end_datetime.getTime() - task.start_datetime.getTime()) / 3600000
                               ))
                           const rowSpan = Math.min(durationHours, HOURS_PER_DAY - rowIndex)
-                          const timeLabel = `${formatHour(task.start_datetime.getHours())}–${formatHour(task.end_datetime.getHours())}`
+                          const timeLabel = task.time_display ?? `${formatHour(task.start_datetime.getHours())}–${formatHour(task.end_datetime.getHours())}`
                           const assigned = assignedFor(task)
                           const isMine = currentSoldierId ? assigned.some(s => s.id === currentSoldierId) : false
                           const missing = task.required_people_count - assigned.length
