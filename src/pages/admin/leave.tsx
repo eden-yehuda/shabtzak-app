@@ -168,36 +168,41 @@ export default function AdminLeavePage() {
         if (sheetMap.has(entry.date)) sheetMap.get(entry.date)!.add(soldier.id)
       }
 
-      // 3. Build Firestore current map: date → Map<soldierId, recordId>
-      //    Query fresh from Firestore (avoids stale React state)
+      // 3. Build Firestore current map: date → Map<soldierId, recordId[]>
+      //    Stores ALL record IDs per soldier per date to handle duplicates
       const freshSnap = await getDocs(
         query(leaveRequestsRef(), where('is_final', '==', true), where('status', '==', 'approved'))
       )
-      const currentMap = new Map<string, Map<string, string>>()
+      const currentMap = new Map<string, Map<string, string[]>>()
       for (const d of freshSnap.docs) {
         const lr = d.data() as { date: string; soldier_id: string }
         if (!sheetDates.includes(lr.date)) continue
         if (!currentMap.has(lr.date)) currentMap.set(lr.date, new Map())
-        currentMap.get(lr.date)!.set(lr.soldier_id, d.id)
+        const dateMap = currentMap.get(lr.date)!
+        if (!dateMap.has(lr.soldier_id)) dateMap.set(lr.soldier_id, [])
+        dateMap.get(lr.soldier_id)!.push(d.id)
       }
 
       // 4. Bidirectional diff
       let addedCount = 0, removedCount = 0
 
       await Promise.all(Array.from(sheetMap.entries()).map(async ([date, sheetSoldiers]) => {
-        const current = currentMap.get(date) ?? new Map<string, string>()
+        const current = currentMap.get(date) ?? new Map<string, string[]>()
 
-        // Remove: in Firestore but NOT in sheet
-        await Promise.all(Array.from(current.entries()).map(async ([sid, rid]) => {
+        // Remove ALL records: in Firestore but NOT in sheet (also removes duplicates)
+        await Promise.all(Array.from(current.entries()).map(async ([sid, rids]) => {
           if (!sheetSoldiers.has(sid)) {
-            await deleteDoc(doc(db, 'leave_requests', rid))
-            removedCount++
+            await Promise.all(rids.map(rid => deleteDoc(doc(db, 'leave_requests', rid))))
+            removedCount += rids.length
+          } else if (rids.length > 1) {
+            // Duplicate: keep first, delete rest
+            await Promise.all(rids.slice(1).map(rid => deleteDoc(doc(db, 'leave_requests', rid))))
           }
         }))
 
         // Add: in sheet but NOT in Firestore
         await Promise.all(Array.from(sheetSoldiers).map(async sid => {
-          if (!current.has(sid)) {
+          if (!current.has(sid) || current.get(sid)!.length === 0) {
             const pending = soldierRequests.find(r => r.soldier_id === sid && r.date === date && r.status === 'pending')
             if (pending) {
               await updateDoc(doc(db, 'leave_requests', pending.id), { is_final: true, status: 'approved' })
