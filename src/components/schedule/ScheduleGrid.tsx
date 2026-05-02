@@ -386,6 +386,8 @@ export default function ScheduleGrid({
                       const dur = Math.max(1, Math.round((t.end_datetime.getTime() - t.start_datetime.getTime()) / 3600000))
                       return Math.min(sr + dur - 1, HOURS_PER_DAY - 1)
                     })
+                    // If there are overflow tasks from previous day, they occupy row 0 — include it
+                    if (overflowTypes.size > 0) startRows.push(0)
                     firstOccupiedRow = Math.min(...startRows)
                     // In builder mode keep bottom open so new tasks can be placed; in view mode trim bottom too
                     if (!builderMode) lastOccupiedRow = Math.min(Math.max(...endRows), HOURS_PER_DAY - 1)
