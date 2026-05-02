@@ -328,25 +328,18 @@ export default function ScheduleGrid({
               </thead>
               <tbody>
                 {(() => {
-                  // Trim leading and trailing empty rows
+                  // Trim leading/trailing empty rows using dayTasks directly
                   let firstOccupiedRow = 0
                   let lastOccupiedRow = HOURS_PER_DAY - 1
-                  if (!builderMode) {
-                    let minRow = HOURS_PER_DAY
-                    let maxRow = -1
-                    for (const col of columns) {
-                      for (const rowIdxStr of Object.keys(taskAtRow[col])) {
-                        const ri = parseInt(rowIdxStr)
-                        const t = taskAtRow[col][ri]
-                        const span = (ri === 0 && overflowRowSpan[col] != null)
-                          ? overflowRowSpan[col]
-                          : Math.max(1, Math.round((t.end_datetime.getTime() - t.start_datetime.getTime()) / 3600000))
-                        minRow = Math.min(minRow, ri)
-                        maxRow = Math.max(maxRow, ri + span - 1)
-                      }
-                    }
-                    if (minRow < HOURS_PER_DAY) firstOccupiedRow = minRow
-                    if (maxRow >= 0) lastOccupiedRow = Math.min(maxRow, HOURS_PER_DAY - 1)
+                  if (!builderMode && dayTasks.length > 0) {
+                    const startRows = dayTasks.map(t => hourToRowIndex(t.start_datetime.getHours()))
+                    const endRows = dayTasks.map(t => {
+                      const sr = hourToRowIndex(t.start_datetime.getHours())
+                      const dur = Math.max(1, Math.round((t.end_datetime.getTime() - t.start_datetime.getTime()) / 3600000))
+                      return Math.min(sr + dur - 1, HOURS_PER_DAY - 1)
+                    })
+                    firstOccupiedRow = Math.min(...startRows)
+                    lastOccupiedRow = Math.min(Math.max(...endRows), HOURS_PER_DAY - 1)
                   }
                   const visibleHours = DAY_HOURS.slice(firstOccupiedRow, lastOccupiedRow + 1)
 
@@ -499,7 +492,7 @@ export default function ScheduleGrid({
                                 style={cardStyle}
                               >
                                 <div className="space-y-0.5">
-                                  <div className="text-[9px] mb-0.5 opacity-60">{timeLabel}</div>
+                                  <div className="text-[9px] mb-0.5 opacity-60" dir="ltr">{timeLabel}</div>
                                   {isMachlaket3 ? (
                                     <div className="text-xs font-semibold text-slate-500">מחלקה 3</div>
                                   ) : (
