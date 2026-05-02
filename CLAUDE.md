@@ -7,7 +7,10 @@
 ```bash
 git add -A
 git commit -m "fix: <תיאור קצר של השינוי>"
-git push
+git checkout main
+git merge master --no-edit
+git push origin main
+git checkout master
 ```
 
 אל תשאל את המשתמש אם לעשות push — פשוט עשה זאת.
@@ -18,4 +21,4 @@ git push
 - **Stack:** Next.js 14, TypeScript, Tailwind CSS, Firebase Firestore
 - **כיוון:** RTL, עברית בלבד
 - **GitHub:** https://github.com/eden-yehuda/shabtzak-app
-- **Netlify:** https://shivzuk.netlify.app — מחובר ל-GitHub, מתעדכן אוטומטית בכל push
+- **Netlify:** https://shivzuk.netlify.app — מחובר ל-GitHub ענף **main** (לא master!), מתעדכן אוטומטית בכל push ל-main
