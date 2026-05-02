@@ -458,7 +458,7 @@ export default function EditSchedule() {
           }
         </div>
 
-        <div className="w-56 shrink-0 sticky top-4">
+        <div className="w-80 shrink-0 sticky top-4">
           <SoldierPanel
             soldiers={soldiers}
             assignments={assignments}

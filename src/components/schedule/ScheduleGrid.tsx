@@ -117,16 +117,16 @@ export default function ScheduleGrid({
     const cols = COLUMN_ORDER.filter(c => typeSet.has(c))
     typeSet.forEach(c => { if (!cols.includes(c)) cols.push(c) })
 
-    // In soldier-facing view: hide days that have any unassigned task (not finished editing yet)
+    // In soldier-facing view: hide a day only if NO task on that day has any assignments at all.
+    // (If at least one task is assigned, show the entire day with all its tasks.)
     let visibleTasks = tasks
     if (!builderMode) {
-      const dayHasUnassigned: Record<string, boolean> = {}
+      const dayHasAnyAssignment: Record<string, boolean> = {}
       for (const t of tasks) {
         const d = isoDate(t.start_datetime)
-        const taskAssignmentCount = assignments.filter(a => a.task_id === t.id).length
-        if (taskAssignmentCount === 0) dayHasUnassigned[d] = true
+        if (assignments.some(a => a.task_id === t.id)) dayHasAnyAssignment[d] = true
       }
-      visibleTasks = tasks.filter(t => !dayHasUnassigned[isoDate(t.start_datetime)])
+      visibleTasks = tasks.filter(t => dayHasAnyAssignment[isoDate(t.start_datetime)])
     }
 
     // In my-tasks mode: also include days the soldier is home (so we can show בית block)
