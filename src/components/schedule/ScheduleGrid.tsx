@@ -480,6 +480,10 @@ export default function ScheduleGrid({
                           const rowSpan = Math.min(durationHours, HOURS_PER_DAY - rowIndex)
                           const timeLabel = task.time_display ?? `${formatHour(task.start_datetime.getHours())}–${formatHour(task.end_datetime.getHours())}`
                           const assigned = assignedFor(task)
+
+                          // In soldier-facing view: skip tasks with no assignments
+                          if (!builderMode && assigned.length === 0) return null
+
                           const isMine = currentSoldierId ? assigned.some(s => s.id === currentSoldierId) : false
                           const missing = task.required_people_count - assigned.length
                           const commanderMissing = task.requires_commander && !assigned.some(s => s.is_commander)
@@ -492,9 +496,9 @@ export default function ScheduleGrid({
                             cardStyle = { backgroundColor: 'rgba(203,213,225,0.35)', borderColor: 'rgba(148,163,184,0.5)', color: '#64748b' }
                           } else if (isSelected) {
                             cardExtraClass = 'bg-sky-100 border-sky-400 ring-2 ring-sky-400'
-                          } else if (commanderMissing) {
+                          } else if (builderMode && commanderMissing) {
                             cardExtraClass = 'bg-red-100 border-red-400 text-red-900'
-                          } else if (missing > 0) {
+                          } else if (builderMode && missing > 0) {
                             cardExtraClass = 'bg-orange-100 border-orange-400 text-orange-900'
                           } else if (isMine) {
                             cardStyle = { backgroundColor: cs.mineBg, borderColor: cs.mineBg, color: '#fff' }
@@ -599,10 +603,10 @@ export default function ScheduleGrid({
                                       {task.notes && task.notes !== 'מחלקה 3' && (
                                         <div className="text-[10px] font-semibold mt-0.5 border-t border-current/20 pt-0.5">{task.notes}</div>
                                       )}
-                                      {missing > 0 && (
+                                      {builderMode && missing > 0 && (
                                         <div className="text-orange-600 font-semibold text-[10px]">לא שובץ</div>
                                       )}
-                                      {commanderMissing && (
+                                      {builderMode && commanderMissing && (
                                         <div className="text-red-600 font-semibold">★?</div>
                                       )}
                                     </>
