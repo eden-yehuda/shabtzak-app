@@ -21,7 +21,7 @@ interface Props {
 }
 
 // Visual order right-to-left (RTL)
-const COLUMN_ORDER = ['תרג"ד', 'סיור', 'כוננות', 'כ"כ א', 'כ"כ ב', 'אחורית', 'ש"ג', 'של"ז']
+const COLUMN_ORDER = ['תרג"ד', 'של"ז', 'סיור', 'כוננות', 'כ"כ א', 'כ"כ ב', 'כ"כ ג', 'אחורית', 'ש"ג']
 
 // Colors per column type
 const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: string; cardBorder: string; cardText: string; mineBg: string }> = {
@@ -30,6 +30,7 @@ const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: stri
   'כוננות':  { headBg: '#4A5E88', headText: '#fff', cardBg: '#EAF0F8', cardBorder: '#B0C4E4', cardText: '#1A2D50', mineBg: '#38507A' },
   'כ"כ א':  { headBg: '#516B85', headText: '#fff', cardBg: '#EEF2F7', cardBorder: '#C4D3E3', cardText: '#1E3550', mineBg: '#3A5470' },
   'כ"כ ב':  { headBg: '#40787A', headText: '#fff', cardBg: '#EAF4F4', cardBorder: '#B5D5D5', cardText: '#153A3A', mineBg: '#2E6062' },
+  'כ"כ ג':  { headBg: '#4A6878', headText: '#fff', cardBg: '#EBF2F6', cardBorder: '#B8CFDA', cardText: '#162535', mineBg: '#365060' },
   'אחורית': { headBg: '#7A6652', headText: '#fff', cardBg: '#F4EFE7', cardBorder: '#D8CBBA', cardText: '#3D2E18', mineBg: '#61503E' },
   'ש"ג':    { headBg: '#4A7A5E', headText: '#fff', cardBg: '#EAF3EE', cardBorder: '#B8D5C5', cardText: '#1A3828', mineBg: '#365E48' },
   'של"ז':   { headBg: '#635E88', headText: '#fff', cardBg: '#EDEAF6', cardBorder: '#C5C0DC', cardText: '#2A2448', mineBg: '#4D4870' },
@@ -564,7 +565,7 @@ export default function ScheduleGrid({
                                         <div className="text-[10px] font-semibold mt-0.5 border-t border-current/20 pt-0.5">{task.notes}</div>
                                       )}
                                       {missing > 0 && (
-                                        <div className="text-orange-600 font-semibold">−{missing}</div>
+                                        <div className="text-orange-600 font-semibold text-[10px]">לא שובץ</div>
                                       )}
                                       {commanderMissing && (
                                         <div className="text-red-600 font-semibold">★?</div>
