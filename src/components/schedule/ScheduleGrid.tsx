@@ -80,7 +80,15 @@ export default function ScheduleGrid({
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
   const [now, setNow] = useState(() => new Date())
   const [pairingCandidate, setPairingCandidate] = useState<{ taskId: string; soldierId: string } | null>(null)
+
   const todayStr = useMemo(() => isoDate(new Date()), [])
+
+  // Military day: if current hour is before DAY_START_HOUR, the "now" belongs to the previous calendar day
+  const nowMilitaryDay = useMemo(() => {
+    const d = new Date(now)
+    if (d.getHours() < DAY_START_HOUR) d.setDate(d.getDate() - 1)
+    return isoDate(d)
+  }, [now, DAY_START_HOUR])
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60000)
@@ -410,7 +418,7 @@ export default function ScheduleGrid({
                     }
                     if (myTasksOnly && soldierHome && rowIndex >= homeRowStart) return null
 
-                    const isCurrentHour = day === todayStr && hour === now.getHours()
+                    const isCurrentHour = day === nowMilitaryDay && hour === now.getHours()
                     const nowPct = `${(now.getMinutes() / 60) * 100}%`
 
                     return (
@@ -483,7 +491,7 @@ export default function ScheduleGrid({
                           }
 
                           // Time indicator within task cell (current time may fall anywhere in the rowSpan)
-                          const nowRowIndex = day === todayStr ? hourToRowIndex(now.getHours()) : -1
+                          const nowRowIndex = day === nowMilitaryDay ? hourToRowIndex(now.getHours()) : -1
                           const nowInTask = nowRowIndex >= rowIndex && nowRowIndex < rowIndex + rowSpan
                           const taskNowPct = nowInTask
                             ? `${((nowRowIndex - rowIndex + now.getMinutes() / 60) / rowSpan) * 100}%`
