@@ -7,3 +7,8 @@
 
 [context.dev]
   command = "npm run build"
+
+# Enable branch deploys for preview branches
+[context."preview/admin-redesign"]
+  command = "npm run build"
+  publish = "out"
