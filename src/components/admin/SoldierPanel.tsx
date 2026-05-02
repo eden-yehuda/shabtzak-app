@@ -9,6 +9,7 @@ interface Props {
   tasks: Task[]
   finalLeave: LeaveRequest[]
   selectedTaskId: string | null
+  onAssigned?: () => void
 }
 
 type StatusFilter = 'all' | 'present' | 'home' | 'returning' | 'leaving'
@@ -40,7 +41,7 @@ function getSoldierStatus(
   return { label: 'נמצא', color: 'text-green-700 bg-green-50' }
 }
 
-export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave, selectedTaskId }: Props) {
+export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave, selectedTaskId, onAssigned }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
 
@@ -64,14 +65,33 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
     return { soldier: s, taskCount, isAssignedToSelected, restHours, status }
   }), [soldiers, assignments, tasks, selectedTaskId, selectedTask, taskDate, finalLeave])
 
+  const statusPriority = (label: string) => {
+    if (label === 'נמצא' || label === 'חוזר') return 0
+    if (label === 'יוצא') return 1
+    return 2 // בית last
+  }
+
   const filtered = useMemo(() => {
-    if (statusFilter === 'all') return enriched
-    return enriched.filter(e => {
-      if (statusFilter === 'present') return e.status.label === 'נמצא'
-      if (statusFilter === 'home') return e.status.label === 'בית'
-      if (statusFilter === 'returning') return e.status.label === 'חוזר'
-      if (statusFilter === 'leaving') return e.status.label === 'יוצא'
-      return true
+    let base = enriched
+    if (statusFilter !== 'all') {
+      base = enriched.filter(e => {
+        if (statusFilter === 'present') return e.status.label === 'נמצא'
+        if (statusFilter === 'home') return e.status.label === 'בית'
+        if (statusFilter === 'returning') return e.status.label === 'חוזר'
+        if (statusFilter === 'leaving') return e.status.label === 'יוצא'
+        return true
+      })
+    }
+    return [...base].sort((a, b) => {
+      // 1. Assigned to selected task → always first
+      if (a.isAssignedToSelected !== b.isAssignedToSelected)
+        return a.isAssignedToSelected ? -1 : 1
+      // 2. Present/returning before leaving before home
+      const pA = statusPriority(a.status.label)
+      const pB = statusPriority(b.status.label)
+      if (pA !== pB) return pA - pB
+      // 3. Fewest tasks → more available
+      return a.taskCount - b.taskCount
     })
   }, [enriched, statusFilter])
 
@@ -80,7 +100,10 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
     const already = assignments.some(a => a.task_id === selectedTaskId && a.soldier_id === soldierId)
     if (!already) {
       setIsSubmitting(true)
-      try { await createAssignment(selectedTaskId, soldierId) }
+      try {
+        await createAssignment(selectedTaskId, soldierId)
+        onAssigned?.()
+      }
       catch (err) { console.error(err) }
       finally { setIsSubmitting(false) }
     }
@@ -95,7 +118,7 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
   ]
 
   return (
-    <div className="bg-white rounded-xl shadow p-3 flex flex-col gap-2 h-full" dir="rtl">
+    <div className="bg-white rounded-xl shadow p-3 flex flex-col gap-2 max-h-[calc(100vh-5rem)] overflow-hidden" dir="rtl">
       <div className="text-xs font-bold text-slate-500">
         {selectedTaskId ? 'לחץ לשיבוץ' : 'בחר משימה לשיבוץ'}
       </div>

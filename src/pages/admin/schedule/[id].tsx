@@ -82,9 +82,12 @@ export default function EditSchedule() {
   const errorCount = validationErrors.filter(e => e.type === 'error').length
   const warnCount = validationErrors.filter(e => e.type === 'warning').length
 
+  // Auto-unpublish when any edit is made — soldiers won't see mid-edit state
   async function touchSchedule() {
     if (!scheduleId) return
-    await updateDoc(doc(db, 'schedules', scheduleId), { updated_at: serverTimestamp() })
+    const update: Record<string, unknown> = { updated_at: serverTimestamp() }
+    if (schedule?.status === 'published') update.status = 'draft'
+    await updateDoc(doc(db, 'schedules', scheduleId), update)
   }
 
   async function handleMoveTask(taskId: string, hourDelta: number) {
@@ -298,6 +301,7 @@ export default function EditSchedule() {
             tasks={tasks}
             finalLeave={finalLeave}
             selectedTaskId={selectedTaskId}
+            onAssigned={touchSchedule}
           />
         </div>
       </div>
