@@ -23,7 +23,7 @@ interface Props {
 }
 
 // Visual order right-to-left (RTL)
-const COLUMN_ORDER = ['תרג"ד', 'של"ז', 'סיור', 'כוננות', 'כ"כ א', 'כ"כ ב', 'כ"כ ג', 'אחורית', 'ש"ג']
+const COLUMN_ORDER = ['תרג"ד', 'סיור', 'כוננות', 'כ"כ א', 'כ"כ ב', 'כ"כ ג', 'אחורית', 'ש"ג', 'של"ז']
 
 // Colors per column type
 const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: string; cardBorder: string; cardText: string; mineBg: string }> = {

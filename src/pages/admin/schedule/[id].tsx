@@ -31,7 +31,6 @@ export default function EditSchedule() {
   const [showSyncModal, setShowSyncModal] = useState(false)
 
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
-  const [showValidation, setShowValidation] = useState(false)
   const [llmChecked, setLlmChecked] = useState(false)
   const [llmResult, setLlmResult] = useState<string | null>(null)
   const [llmLoading, setLlmLoading] = useState(false)
@@ -225,14 +224,13 @@ export default function EditSchedule() {
             📊 סנכרון שבצ&quot;ק
           </button>
 
-          <button onClick={() => setShowValidation(v => !v)}
-            className={`rounded-xl px-4 py-2 text-sm font-semibold border transition ${
-              errorCount > 0 ? 'bg-red-50 border-red-300 text-red-700' :
-              warnCount > 0 ? 'bg-yellow-50 border-yellow-300 text-yellow-700' :
-              'bg-green-50 border-green-300 text-green-700'
-            }`}>
+          <span className={`rounded-xl px-4 py-2 text-sm font-semibold border ${
+            errorCount > 0 ? 'bg-red-50 border-red-300 text-red-700' :
+            warnCount > 0 ? 'bg-yellow-50 border-yellow-300 text-yellow-700' :
+            'bg-green-50 border-green-300 text-green-700'
+          }`}>
             {errorCount > 0 ? `⛔ ${errorCount} שגיאות` : warnCount > 0 ? `⚠️ ${warnCount} אזהרות` : '✓ תקין'}
-          </button>
+          </span>
 
           <button onClick={runLlmCheck} disabled={llmLoading || tasks.length === 0}
             className="border border-purple-300 text-purple-700 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40 hover:bg-purple-50 transition">
@@ -263,7 +261,8 @@ export default function EditSchedule() {
         </div>
       )}
 
-      {showValidation && validationErrors.length > 0 && (
+      {/* Always-visible real-time validation errors */}
+      {validationErrors.length > 0 && (
         <div className="mb-4">
           <ValidationPanel errors={validationErrors} />
         </div>
@@ -288,8 +287,6 @@ export default function EditSchedule() {
                   const a = assignments.find(a => a.task_id === taskId && a.soldier_id === soldierId)
                   if (a) { await deleteAssignment(a.id); await touchSchedule() }
                 }}
-                onMoveTask={handleMoveTask}
-                onResizeTask={handleResizeTask}
                 onDeleteTask={handleDeleteTask}
                 onMoveTaskToSlot={handleMoveTaskToSlot}
                 onDeleteColumn={handleDeleteColumn}
