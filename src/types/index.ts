@@ -17,6 +17,7 @@ export interface Schedule {
   created_by: string
   updated_at?: Date
   day_start_hour?: number
+  home_leave_hour?: number  // hour when soldiers swap (depart/return); defaults to day_start_hour
 }
 
 export interface TaskType {

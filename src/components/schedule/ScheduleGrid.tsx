@@ -11,6 +11,7 @@ interface Props {
   myTasksOnly?: boolean
   selectedTaskId?: string | null
   dayStartHour?: number
+  homeLeaveHour?: number  // when soldiers swap (depart/return); defaults to dayStartHour
   onSelectTask?: (taskId: string) => void
   onRemoveSoldier?: (taskId: string, soldierId: string) => void
   onMoveTask?: (taskId: string, hourDelta: number) => void
@@ -67,17 +68,19 @@ function addDays(dateStr: string, n: number): string {
 
 export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
-  currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, onSelectTask, onRemoveSoldier,
+  currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, onSelectTask, onRemoveSoldier,
   onMoveTask, onResizeTask, onDeleteTask, onMoveTaskToSlot,
   onPairSoldiers, onUnpairSoldier, onDeleteColumn,
 }: Props) {
   const DAY_START_HOUR = dayStartHour
-  const HOME_LEAVE_START = DAY_START_HOUR // soldiers depart/return at the same hour as day start
+  // HOME_LEAVE_START: when soldiers swap (depart/return). Defaults to DAY_START_HOUR.
+  // For שבוע 2: DAY_START_HOUR=2 (military day boundary) but HOME_LEAVE_START=14 (swap time).
+  const HOME_LEAVE_START = homeLeaveHour ?? DAY_START_HOUR
   const DAY_HOURS = Array.from({ length: HOURS_PER_DAY }, (_, i) => (i + DAY_START_HOUR) % HOURS_PER_DAY)
-  const HOME_LEAVE_START_ROW = 0 // always row 0 since HOME_LEAVE_START === DAY_START_HOUR
   function hourToRowIndex(hour: number): number {
     return (hour - DAY_START_HOUR + HOURS_PER_DAY) % HOURS_PER_DAY
   }
+  const HOME_LEAVE_START_ROW = hourToRowIndex(HOME_LEAVE_START)
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
   const [now, setNow] = useState(() => new Date())
   const [pairingCandidate, setPairingCandidate] = useState<{ taskId: string; soldierId: string } | null>(null)
@@ -320,19 +323,19 @@ export default function ScheduleGrid({
               )}
               {soldierReturning && !soldierHome && (
                 <span className="bg-green-50 text-green-700 text-xs font-semibold px-3 py-0.5 rounded-full">
-                  ↩ חוזר 10:00
+                  ↩ חוזר {formatHour(HOME_LEAVE_START)}
                 </span>
               )}
               {helper && (
                 <div className="flex gap-2 text-xs text-slate-500 flex-wrap">
                   {helper.leaving.length > 0 && (
                     <span className="bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full">
-                      יציאה הביתה ב-10:00: {helper.leaving.join(', ')}
+                      יציאה הביתה ב-{formatHour(HOME_LEAVE_START)}: {helper.leaving.join(', ')}
                     </span>
                   )}
                   {helper.returning.length > 0 && (
                     <span className="bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
-                      חזרה מהבית (עד 10:00): {helper.returning.join(', ')}
+                      חזרה מהבית (עד {formatHour(HOME_LEAVE_START)}): {helper.returning.join(', ')}
                     </span>
                   )}
                   <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
