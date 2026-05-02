@@ -31,6 +31,7 @@ export default function EditSchedule() {
   const [showSyncModal, setShowSyncModal] = useState(false)
 
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
+  const [showErrorPanel, setShowErrorPanel] = useState(false)
   const [llmChecked, setLlmChecked] = useState(false)
   const [llmResult, setLlmResult] = useState<string | null>(null)
   const [llmLoading, setLlmLoading] = useState(false)
@@ -224,13 +225,14 @@ export default function EditSchedule() {
             📊 סנכרון שבצ&quot;ק
           </button>
 
-          <span className={`rounded-xl px-4 py-2 text-sm font-semibold border ${
-            errorCount > 0 ? 'bg-red-50 border-red-300 text-red-700' :
-            warnCount > 0 ? 'bg-yellow-50 border-yellow-300 text-yellow-700' :
-            'bg-green-50 border-green-300 text-green-700'
-          }`}>
+          <button onClick={() => setShowErrorPanel(v => !v)}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold border transition ${
+              errorCount > 0 ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' :
+              warnCount > 0 ? 'bg-yellow-50 border-yellow-300 text-yellow-700 hover:bg-yellow-100' :
+              'bg-green-50 border-green-300 text-green-700 hover:bg-green-100'
+            }`}>
             {errorCount > 0 ? `⛔ ${errorCount} שגיאות` : warnCount > 0 ? `⚠️ ${warnCount} אזהרות` : '✓ תקין'}
-          </span>
+          </button>
 
           <button onClick={runLlmCheck} disabled={llmLoading || tasks.length === 0}
             className="border border-purple-300 text-purple-700 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40 hover:bg-purple-50 transition">
@@ -261,11 +263,27 @@ export default function EditSchedule() {
         </div>
       )}
 
-      {/* Always-visible real-time validation errors */}
-      {validationErrors.length > 0 && (
-        <div className="mb-4">
-          <ValidationPanel errors={validationErrors} />
-        </div>
+      {/* Side drawer: validation errors panel */}
+      {showErrorPanel && (
+        <>
+          <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setShowErrorPanel(false)} />
+          <div className="fixed top-0 left-0 h-full w-96 max-w-[90vw] bg-white shadow-2xl z-50 overflow-y-auto" dir="rtl">
+            <div className="sticky top-0 bg-white border-b border-slate-200 px-4 py-3 flex justify-between items-center">
+              <div className="font-bold text-slate-800">
+                {errorCount > 0 ? `⛔ ${errorCount} שגיאות` : warnCount > 0 ? `⚠️ ${warnCount} אזהרות` : '✓ הכל תקין'}
+              </div>
+              <button onClick={() => setShowErrorPanel(false)}
+                className="text-slate-400 hover:text-slate-700 text-xl leading-none px-2">
+                ×
+              </button>
+            </div>
+            <div className="p-4">
+              {validationErrors.length > 0
+                ? <ValidationPanel errors={validationErrors} />
+                : <p className="text-sm text-green-700 text-center py-8">אין שגיאות בשבצ&quot;ק</p>}
+            </div>
+          </div>
+        </>
       )}
 
       <div className="flex gap-4 items-start" dir="rtl">

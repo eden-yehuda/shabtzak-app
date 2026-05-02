@@ -596,21 +596,6 @@ export default function ScheduleGrid({
                                                 ×
                                               </button>
                                             )}
-                                            {builderMode && (onPairSoldiers || onUnpairSoldier) && (
-                                              <button
-                                                title={row[0].alternating_group != null ? 'בטל לסירוגין' : pairingCandidate?.taskId === task.id && pairingCandidate.soldierId !== row[0].id ? 'חבר כלסירוגין' : 'סמן לסירוגין'}
-                                                onClick={e => { e.stopPropagation(); handlePairToggle(task.id, row[0]) }}
-                                                className={`text-[9px] px-0.5 rounded leading-none transition ${
-                                                  row[0].alternating_group != null
-                                                    ? 'text-blue-600 opacity-80 hover:opacity-100'
-                                                    : pairingCandidate?.taskId === task.id && pairingCandidate.soldierId === row[0].id
-                                                      ? 'text-orange-500 opacity-100'
-                                                      : 'opacity-30 hover:opacity-80'
-                                                }`}
-                                              >
-                                                ⇄
-                                              </button>
-                                            )}
                                           </div>
                                         ))
                                       })()}
