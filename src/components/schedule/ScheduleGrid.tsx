@@ -18,6 +18,7 @@ interface Props {
   onResizeTask?: (taskId: string, endHourDelta: number) => void
   onDeleteTask?: (taskId: string) => void
   onMoveTaskToSlot?: (taskId: string, date: string, hour: number) => void
+  onCreateTaskAtSlot?: (date: string, hour: number, taskType: string) => void
   onPairSoldiers?: (taskId: string, soldierIdA: string, soldierIdB: string) => void
   onUnpairSoldier?: (taskId: string, soldierId: string) => void
   onDeleteColumn?: (taskType: string) => void
@@ -69,7 +70,7 @@ function addDays(dateStr: string, n: number): string {
 export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
   currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, onSelectTask, onRemoveSoldier,
-  onMoveTask, onResizeTask, onDeleteTask, onMoveTaskToSlot,
+  onMoveTask, onResizeTask, onDeleteTask, onMoveTaskToSlot, onCreateTaskAtSlot,
   onPairSoldiers, onUnpairSoldier, onDeleteColumn,
 }: Props) {
   const DAY_START_HOUR = dayStartHour
@@ -463,14 +464,24 @@ export default function ScheduleGrid({
                           const task = taskAtRow[col][rowIndex] ?? null
 
                           if (!task) {
-                            // Empty cell — if a task is selected and we're in builder mode,
-                            // clicking moves the selected task to this slot
-                            const canMoveTo = builderMode && selectedTaskId && onMoveTaskToSlot
+                            // Empty cell — in builder mode:
+                            // 1. If a task is selected and same column → click to move
+                            // 2. If no task selected and onCreateTaskAtSlot exists → click to create new task in this column
+                            const selectedTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null
+                            const canMoveTo = builderMode && selectedTask && onMoveTaskToSlot && selectedTask.task_type === col
+                            const canCreate = builderMode && !selectedTaskId && onCreateTaskAtSlot
+                            const handleClick = canMoveTo
+                              ? () => onMoveTaskToSlot!(selectedTaskId!, day, hour)
+                              : canCreate
+                                ? () => onCreateTaskAtSlot!(day, hour, col)
+                                : undefined
+                            const cursorClass = canMoveTo ? 'cursor-copy hover:bg-sky-50' : canCreate ? 'cursor-cell hover:bg-emerald-50' : ''
                             return (
                               <td
                                 key={col}
-                                className={`border border-slate-200 bg-slate-100 h-8 relative ${canMoveTo ? 'cursor-copy hover:bg-sky-50' : ''}`}
-                                onClick={canMoveTo ? () => onMoveTaskToSlot!(selectedTaskId!, day, hour) : undefined}
+                                className={`border border-slate-200 bg-slate-100 h-8 relative ${cursorClass}`}
+                                onClick={handleClick}
+                                title={canCreate ? `יצירת משימה ב-${col} ${formatHour(hour)}` : undefined}
                               >
                                 {isCurrentHour && (
                                   <div className="absolute left-0 right-0 pointer-events-none z-20" style={{ top: nowPct }}>

@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/router'
-import { doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, updateDoc, deleteDoc, addDoc, collection, serverTimestamp, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import AdminLayout from '@/components/layout/AdminLayout'
 import ScheduleGrid from '@/components/schedule/ScheduleGrid'
@@ -32,6 +32,33 @@ export default function EditSchedule() {
 
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
   const [showErrorPanel, setShowErrorPanel] = useState(false)
+
+  // Undo stack: each entry is an inverse-action that reverts the last change
+  type UndoAction = { label: string; undo: () => Promise<void> }
+  const [undoStack, setUndoStack] = useState<UndoAction[]>([])
+  const pushUndo = useCallback((action: UndoAction) => {
+    setUndoStack(prev => [...prev.slice(-19), action]) // keep last 20
+  }, [])
+  const performUndo = useCallback(async () => {
+    setUndoStack(prev => {
+      if (prev.length === 0) return prev
+      const last = prev[prev.length - 1]
+      last.undo().catch(e => { console.error(e); alert('ביטול נכשל: ' + e.message) })
+      return prev.slice(0, -1)
+    })
+  }, [])
+  // Ctrl+Z to undo
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        performUndo()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [performUndo])
+
   const [llmChecked, setLlmChecked] = useState(false)
   const [llmResult, setLlmResult] = useState<string | null>(null)
   const [llmLoading, setLlmLoading] = useState(false)
@@ -120,12 +147,33 @@ export default function EditSchedule() {
   }
 
   async function handleDeleteTask(taskId: string) {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) return
     const taskAssignments = assignments.filter(a => a.task_id === taskId)
     try {
       await Promise.all(taskAssignments.map(a => deleteAssignment(a.id)))
       await deleteDoc(doc(db, 'tasks', taskId))
       if (selectedTaskId === taskId) setSelectedTaskId(null)
       await touchSchedule()
+      // Undo: re-create task and assignments (with new IDs)
+      pushUndo({
+        label: `מחיקת משימה ${task.task_type}`,
+        undo: async () => {
+          const newTask = await addDoc(collection(db, 'tasks'), {
+            schedule_id: task.schedule_id,
+            task_type: task.task_type,
+            task_name: task.task_name,
+            start_datetime: Timestamp.fromDate(task.start_datetime),
+            end_datetime: Timestamp.fromDate(task.end_datetime),
+            requires_commander: task.requires_commander,
+            required_people_count: task.required_people_count,
+            difficulty: task.difficulty,
+            notes: task.notes ?? '',
+          })
+          await Promise.all(taskAssignments.map(a => createAssignment(newTask.id, a.soldier_id)))
+          await touchSchedule()
+        },
+      })
     } catch { alert('שגיאה במחיקת משימה') }
   }
 
@@ -151,10 +199,69 @@ export default function EditSchedule() {
     const duration = task.end_datetime.getTime() - task.start_datetime.getTime()
     const newStart = new Date(`${date}T${String(hour).padStart(2, '0')}:00:00`)
     const newEnd = new Date(newStart.getTime() + duration)
+    const oldStart = task.start_datetime
+    const oldEnd = task.end_datetime
     try {
       await updateDoc(doc(db, 'tasks', taskId), { start_datetime: newStart, end_datetime: newEnd })
       await touchSchedule()
+      pushUndo({
+        label: 'הזזת משימה',
+        undo: async () => {
+          await updateDoc(doc(db, 'tasks', taskId), {
+            start_datetime: Timestamp.fromDate(oldStart),
+            end_datetime: Timestamp.fromDate(oldEnd),
+          })
+          await touchSchedule()
+        },
+      })
     } catch { alert('שגיאה בהזזת משימה') }
+  }
+
+  async function handleCreateTaskAtSlot(date: string, hour: number, taskType: string) {
+    if (!scheduleId) return
+    // Default 8-hour duration; use existing task in same column as template if found
+    const template = tasks.find(t => t.task_type === taskType)
+    const start = new Date(`${date}T${String(hour).padStart(2, '0')}:00:00`)
+    const durationHours = template
+      ? Math.round((template.end_datetime.getTime() - template.start_datetime.getTime()) / 3600000)
+      : 8
+    const end = new Date(start.getTime() + durationHours * 3600000)
+    try {
+      const newDoc = await addDoc(collection(db, 'tasks'), {
+        schedule_id: scheduleId,
+        task_type: taskType,
+        task_name: template?.task_name ?? taskType,
+        start_datetime: Timestamp.fromDate(start),
+        end_datetime: Timestamp.fromDate(end),
+        requires_commander: template?.requires_commander ?? false,
+        required_people_count: template?.required_people_count ?? 3,
+        difficulty: template?.difficulty ?? 'normal',
+        notes: '',
+      })
+      await touchSchedule()
+      pushUndo({
+        label: `יצירת משימה ${taskType}`,
+        undo: async () => {
+          await deleteDoc(doc(db, 'tasks', newDoc.id))
+          await touchSchedule()
+        },
+      })
+    } catch { alert('שגיאה ביצירת משימה') }
+  }
+
+  async function handleAssigned(taskId: string, soldierId: string) {
+    // Called by SoldierPanel after assignment is created — register undo
+    const assignment = assignments.find(a => a.task_id === taskId && a.soldier_id === soldierId)
+    pushUndo({
+      label: 'שיבוץ חייל',
+      undo: async () => {
+        // Re-fetch since assignment ID may have changed
+        const current = assignments.find(a => a.task_id === taskId && a.soldier_id === soldierId)
+        if (current) await deleteAssignment(current.id)
+        else if (assignment) await deleteAssignment(assignment.id)
+        await touchSchedule()
+      },
+    })
   }
 
   if (!scheduleId) return null
@@ -223,6 +330,12 @@ export default function EditSchedule() {
           <button onClick={() => setShowSyncModal(true)}
             className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition">
             📊 סנכרון שבצ&quot;ק
+          </button>
+
+          <button onClick={performUndo} disabled={undoStack.length === 0}
+            title={undoStack.length > 0 ? `ביטול: ${undoStack[undoStack.length - 1].label} (Ctrl+Z)` : 'אין פעולה לביטול'}
+            className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-30 disabled:cursor-not-allowed">
+            ↶ ביטול {undoStack.length > 0 && `(${undoStack.length})`}
           </button>
 
           <button onClick={() => setShowErrorPanel(v => !v)}
@@ -308,6 +421,7 @@ export default function EditSchedule() {
                 }}
                 onDeleteTask={handleDeleteTask}
                 onMoveTaskToSlot={handleMoveTaskToSlot}
+                onCreateTaskAtSlot={handleCreateTaskAtSlot}
                 onDeleteColumn={handleDeleteColumn}
                 onPairSoldiers={async (taskId, soldierIdA, soldierIdB) => {
                   const taskAssigns = assignments.filter(a => a.task_id === taskId)
@@ -343,6 +457,7 @@ export default function EditSchedule() {
             selectedTaskId={selectedTaskId}
             onAssigned={async (taskId: string, soldierId: string) => {
               await touchSchedule()
+              await handleAssigned(taskId, soldierId)
               // Auto-assign to כ"כ ג when assigning to סיור
               const assignedTask = tasks.find(t => t.id === taskId)
               if (assignedTask?.task_type === 'סיור') {
