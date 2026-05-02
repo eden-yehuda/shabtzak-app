@@ -183,8 +183,12 @@ export default function AdminLeavePage() {
         dateMap.get(lr.soldier_id)!.push(d.id)
       }
 
+      // 3b. Delete stale approved records outside the sheet date range
+      const staleDocs = freshSnap.docs.filter(d => !sheetDates.includes((d.data() as { date: string }).date))
+      await Promise.all(staleDocs.map(d => deleteDoc(doc(db, 'leave_requests', d.id))))
+
       // 4. Bidirectional diff
-      let addedCount = 0, removedCount = 0
+      let addedCount = 0, removedCount = staleDocs.length
 
       await Promise.all(Array.from(sheetMap.entries()).map(async ([date, sheetSoldiers]) => {
         const current = currentMap.get(date) ?? new Map<string, string[]>()
