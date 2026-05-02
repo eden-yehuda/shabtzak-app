@@ -40,7 +40,6 @@ const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: stri
 const DEFAULT_COL_STYLE = { headBg: '#556070', headText: '#fff', cardBg: '#EEF0F2', cardBorder: '#C8CDD5', cardText: '#222D38', mineBg: '#3A4755' }
 
 const HOURS_PER_DAY = 24
-const HOME_LEAVE_START = 10 // hour soldier departs / returns
 
 function formatHour(h: number): string {
   return String(h).padStart(2, '0') + ':00'
@@ -73,8 +72,9 @@ export default function ScheduleGrid({
   onPairSoldiers, onUnpairSoldier, onDeleteColumn,
 }: Props) {
   const DAY_START_HOUR = dayStartHour
+  const HOME_LEAVE_START = DAY_START_HOUR // soldiers depart/return at the same hour as day start
   const DAY_HOURS = Array.from({ length: HOURS_PER_DAY }, (_, i) => (i + DAY_START_HOUR) % HOURS_PER_DAY)
-  const HOME_LEAVE_START_ROW = (HOME_LEAVE_START - DAY_START_HOUR + HOURS_PER_DAY) % HOURS_PER_DAY
+  const HOME_LEAVE_START_ROW = 0 // always row 0 since HOME_LEAVE_START === DAY_START_HOUR
   function hourToRowIndex(hour: number): number {
     return (hour - DAY_START_HOUR + HOURS_PER_DAY) % HOURS_PER_DAY
   }
@@ -416,7 +416,7 @@ export default function ScheduleGrid({
                             className="border border-blue-200 bg-blue-50 text-center align-middle"
                           >
                             <div className="text-blue-700 font-bold text-sm py-1">🏠 בית</div>
-                            <div className="text-blue-500 text-xs">02:00–10:00</div>
+                            <div className="text-blue-500 text-xs">{formatHour(DAY_START_HOUR)}–{formatHour(HOME_LEAVE_START)}</div>
                           </td>
                         </tr>
                       )
@@ -438,7 +438,7 @@ export default function ScheduleGrid({
                             className="border border-blue-200 bg-blue-50 text-center align-middle"
                           >
                             <div className="text-blue-700 font-bold text-sm py-1">🏠 בית</div>
-                            <div className="text-blue-500 text-xs">10:00–10:00</div>
+                            <div className="text-blue-500 text-xs">{formatHour(HOME_LEAVE_START)}–{formatHour(HOME_LEAVE_START)}</div>
                           </td>
                         </tr>
                       )
