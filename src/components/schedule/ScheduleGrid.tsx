@@ -328,9 +328,11 @@ export default function ScheduleGrid({
               </thead>
               <tbody>
                 {(() => {
-                  // Trim trailing empty rows: find the last row that has content
+                  // Trim leading and trailing empty rows
+                  let firstOccupiedRow = 0
                   let lastOccupiedRow = HOURS_PER_DAY - 1
                   if (!builderMode) {
+                    let minRow = HOURS_PER_DAY
                     let maxRow = -1
                     for (const col of columns) {
                       for (const rowIdxStr of Object.keys(taskAtRow[col])) {
@@ -339,18 +341,21 @@ export default function ScheduleGrid({
                         const span = (ri === 0 && overflowRowSpan[col] != null)
                           ? overflowRowSpan[col]
                           : Math.max(1, Math.round((t.end_datetime.getTime() - t.start_datetime.getTime()) / 3600000))
+                        minRow = Math.min(minRow, ri)
                         maxRow = Math.max(maxRow, ri + span - 1)
                       }
                     }
+                    if (minRow < HOURS_PER_DAY) firstOccupiedRow = minRow
                     if (maxRow >= 0) lastOccupiedRow = Math.min(maxRow, HOURS_PER_DAY - 1)
                   }
-                  const visibleHours = DAY_HOURS.slice(0, lastOccupiedRow + 1)
+                  const visibleHours = DAY_HOURS.slice(firstOccupiedRow, lastOccupiedRow + 1)
 
                   // Track if home block rendered (only once per section)
                   let homeBlockRendered = false
                   let returnBlockRendered = false
 
-                  return visibleHours.map((hour, rowIndex) => {
+                  return visibleHours.map((hour) => {
+                  const rowIndex = hourToRowIndex(hour)
                     // בית block: returning morning (rows 0..returnRowEnd)
                     if (myTasksOnly && soldierReturning && rowIndex <= returnRowEnd && !returnBlockRendered) {
                       returnBlockRendered = true
