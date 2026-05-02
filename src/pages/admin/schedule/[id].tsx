@@ -63,6 +63,8 @@ export default function EditSchedule() {
   const [llmResult, setLlmResult] = useState<string | null>(null)
   const [llmLoading, setLlmLoading] = useState(false)
   const [confirmPublish, setConfirmPublish] = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  const [unpublishing, setUnpublishing] = useState(false)
 
   useEffect(() => {
     if (!scheduleId) return
@@ -104,18 +106,22 @@ export default function EditSchedule() {
   }
 
   async function publish() {
-    if (!scheduleId) return
+    if (!scheduleId || publishing) return
+    setPublishing(true)
     try {
       await updateDoc(doc(db, 'schedules', scheduleId), { status: 'published', updated_at: serverTimestamp() })
     } catch { alert('פרסום נכשל — נסה שוב') }
+    finally { setPublishing(false) }
     setConfirmPublish(false)
   }
 
   async function unpublish() {
-    if (!scheduleId) return
+    if (!scheduleId || unpublishing) return
+    setUnpublishing(true)
     try {
       await updateDoc(doc(db, 'schedules', scheduleId), { status: 'draft', updated_at: serverTimestamp() })
     } catch { alert('ביטול פרסום נכשל') }
+    finally { setUnpublishing(false) }
   }
 
   const errorCount = validationErrors.filter(e => e.type === 'error').length
@@ -358,15 +364,14 @@ export default function EditSchedule() {
           </button>
 
           {schedule.status === 'published' ? (
-            <button onClick={unpublish}
-              className="border border-slate-300 text-slate-600 rounded-xl px-4 py-2 text-sm font-semibold hover:bg-slate-50">
-              בטל פרסום
+            <button onClick={unpublish} disabled={unpublishing}
+              className="border border-slate-300 text-slate-600 rounded-xl px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60 disabled:cursor-wait">
+              {unpublishing ? '⏳ מבטל פרסום...' : 'בטל פרסום'}
             </button>
           ) : (
-            <button onClick={() => { if (llmChecked || errorCount === 0) setConfirmPublish(true) }}
-              disabled={!llmChecked && errorCount > 0}
-              className="bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40">
-              פרסם ✓
+            <button onClick={() => setConfirmPublish(true)} disabled={publishing}
+              className="bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-green-700 transition disabled:opacity-60 disabled:cursor-wait">
+              {publishing ? '⏳ מפרסם...' : 'פרסם ✓'}
             </button>
           )}
         </div>

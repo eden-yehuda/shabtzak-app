@@ -117,8 +117,20 @@ export default function ScheduleGrid({
     const cols = COLUMN_ORDER.filter(c => typeSet.has(c))
     typeSet.forEach(c => { if (!cols.includes(c)) cols.push(c) })
 
+    // In soldier-facing view: hide days that have any unassigned task (not finished editing yet)
+    let visibleTasks = tasks
+    if (!builderMode) {
+      const dayHasUnassigned: Record<string, boolean> = {}
+      for (const t of tasks) {
+        const d = isoDate(t.start_datetime)
+        const taskAssignmentCount = assignments.filter(a => a.task_id === t.id).length
+        if (taskAssignmentCount === 0) dayHasUnassigned[d] = true
+      }
+      visibleTasks = tasks.filter(t => !dayHasUnassigned[isoDate(t.start_datetime)])
+    }
+
     // In my-tasks mode: also include days the soldier is home (so we can show בית block)
-    const taskDays = new Set(tasks.map(t => isoDate(t.start_datetime)))
+    const taskDays = new Set(visibleTasks.map(t => isoDate(t.start_datetime)))
     if (myTasksOnly && currentSoldierId) {
       finalLeave
         .filter(r => r.soldier_id === currentSoldierId && r.status === 'approved')
@@ -132,7 +144,7 @@ export default function ScheduleGrid({
     if (cols.length === 0) cols.push(...COLUMN_ORDER)
 
     return { days: sortedDays, allColumns: cols }
-  }, [tasks, finalLeave, myTasksOnly, currentSoldierId])
+  }, [tasks, assignments, finalLeave, myTasksOnly, currentSoldierId, builderMode])
 
   // Time line: show only when nowMilitaryDay is actually in the grid.
   // If we're before the schedule starts (e.g. 00:31 on day 1 when schedule starts at 14:00),
@@ -506,8 +518,8 @@ export default function ScheduleGrid({
                           const timeLabel = task.time_display ?? `${formatHour(task.start_datetime.getHours())}–${formatHour(task.end_datetime.getHours())}`
                           const assigned = assignedFor(task)
 
-                          // In soldier-facing view: skip tasks with no assignments
-                          if (!builderMode && assigned.length === 0) return null
+                          // In soldier-facing view: don't filter individual tasks here —
+                          // entire days with unassigned tasks are filtered out at the days-list level above
 
                           const isMine = currentSoldierId ? assigned.some(s => s.id === currentSoldierId) : false
                           const missing = task.required_people_count - assigned.length

@@ -137,36 +137,30 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
       <button key={soldier.id} type="button"
         onClick={() => !isHome && assign(soldier.id)}
         disabled={!selectedTaskId || isAssignedToSelected || isHome}
-        className={`w-full flex flex-col items-stretch gap-0.5 px-2 py-1.5 rounded-lg border transition text-sm ${
+        className={`w-full flex flex-col items-stretch gap-1 px-2 py-1.5 rounded-lg border transition text-sm ${
           isAssignedToSelected ? 'bg-blue-50 border-blue-300 text-blue-700' :
           isHome ? 'bg-slate-50 border-slate-100 text-slate-400 cursor-default opacity-60' :
           !selectedTaskId ? 'bg-slate-50 border-slate-100 cursor-default' :
           'bg-slate-50 border-slate-200 hover:border-navy hover:bg-white'
         }`}>
-        {/* Top: name + primary status */}
-        <div className="flex items-center justify-between gap-1.5">
-          <div className="flex items-center gap-1 min-w-0 flex-1">
-            {soldier.is_commander && <span className="text-navy text-xs shrink-0">★</span>}
-            <span className="font-medium truncate text-right">{soldier.full_name}</span>
-          </div>
-          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${status.color}`}>
+        {/* Row 1: full name (uses entire width) */}
+        <div className="flex items-center gap-1 text-right">
+          {soldier.is_commander && <span className="text-navy text-xs shrink-0">★</span>}
+          <span className="font-medium truncate flex-1 text-right">{soldier.full_name}</span>
+        </div>
+        {/* Row 2: status + counters */}
+        <div className="flex items-center gap-1 text-[10px] justify-end flex-wrap">
+          {restHours !== null && restHours < 8 && (
+            <span className="text-orange-600 font-semibold">{restHours.toFixed(0)}ש׳</span>
+          )}
+          {isConcurrent && (
+            <span className="font-semibold px-1 py-0.5 rounded-full text-orange-700 bg-orange-50">ב.ז</span>
+          )}
+          <span className={`font-semibold px-1.5 py-0.5 rounded-full ${status.color}`}>
             {status.label}
           </span>
+          <span className="text-slate-400">{taskCount}✓</span>
         </div>
-        {/* Bottom: secondary info (only when relevant) */}
-        {(isConcurrent || (restHours !== null && restHours < 8) || taskCount > 0) && (
-          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 justify-end">
-            {restHours !== null && restHours < 8 && (
-              <span className="text-orange-600 font-semibold">{restHours.toFixed(0)}ש׳</span>
-            )}
-            {isConcurrent && (
-              <span className="font-semibold px-1 py-0.5 rounded-full text-orange-700 bg-orange-50">
-                ב.ז
-              </span>
-            )}
-            <span className="text-slate-400">{taskCount}✓</span>
-          </div>
-        )}
       </button>
     )
   }
