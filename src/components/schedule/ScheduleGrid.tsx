@@ -130,6 +130,21 @@ export default function ScheduleGrid({
     return { days: sortedDays, allColumns: cols }
   }, [tasks, finalLeave, myTasksOnly, currentSoldierId])
 
+  // For the time line: if nowMilitaryDay isn't in the schedule grid (e.g. before schedule starts,
+  // or current time is pre-dayStart so military day is yesterday which isn't displayed),
+  // fall back to the current calendar day at DAY_START_HOUR.
+  const nowLineDay = useMemo(() => {
+    if (days.includes(nowMilitaryDay)) return nowMilitaryDay
+    const calToday = isoDate(now)
+    if (days.includes(calToday)) return calToday
+    return nowMilitaryDay // fallback: line won't show (day not in grid)
+  }, [nowMilitaryDay, days, now])
+
+  const nowLineHour = useMemo(() => {
+    if (days.includes(nowMilitaryDay)) return now.getHours()
+    return DAY_START_HOUR // show at start of military day column when falling back
+  }, [nowMilitaryDay, days, now, DAY_START_HOUR])
+
   // Auto-collapse past days when day list becomes known
   useEffect(() => {
     setCollapsedDays(prev => {
@@ -430,7 +445,7 @@ export default function ScheduleGrid({
                     }
                     if (myTasksOnly && soldierHome && rowIndex >= homeRowStart) return null
 
-                    const isCurrentHour = day === nowMilitaryDay && hour === now.getHours()
+                    const isCurrentHour = day === nowLineDay && hour === nowLineHour
                     const nowPct = `${(now.getMinutes() / 60) * 100}%`
 
                     return (
@@ -507,7 +522,7 @@ export default function ScheduleGrid({
                           }
 
                           // Time indicator within task cell (current time may fall anywhere in the rowSpan)
-                          const nowRowIndex = day === nowMilitaryDay ? hourToRowIndex(now.getHours()) : -1
+                          const nowRowIndex = day === nowLineDay ? hourToRowIndex(nowLineHour) : -1
                           const nowInTask = nowRowIndex >= rowIndex && nowRowIndex < rowIndex + rowSpan
                           const taskNowPct = nowInTask
                             ? `${((nowRowIndex - rowIndex + now.getMinutes() / 60) / rowSpan) * 100}%`
