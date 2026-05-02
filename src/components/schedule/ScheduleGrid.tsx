@@ -355,7 +355,7 @@ export default function ScheduleGrid({
                   let returnBlockRendered = false
 
                   return visibleHours.map((hour) => {
-                  const rowIndex = hourToRowIndex(hour)
+                    const rowIndex = hourToRowIndex(hour)
                     // בית block: returning morning (rows 0..returnRowEnd)
                     if (myTasksOnly && soldierReturning && rowIndex <= returnRowEnd && !returnBlockRendered) {
                       returnBlockRendered = true
