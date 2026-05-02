@@ -142,19 +142,16 @@ export default function AdminLeavePage() {
       const entries: { soldierName: string; date: string }[] = data.entries
       const sheetDates: string[] = data.dates ?? []
 
-      // 1. Update survey dates to cover the sheet range
+      // 1. Update survey dates to exactly match the sheet range
       if (sheetDates.length > 0) {
         const firstDate = sheetDates[0]
         const lastDate = sheetDates[sheetDates.length - 1]
-        const needsUpdate = !survey?.is_open || (survey.to ?? '') < lastDate || (survey.from ?? '') > firstDate
-        if (needsUpdate) {
-          await setDoc(doc(db, 'settings', 'leave_survey'), {
-            is_open: true,
-            from: firstDate,
-            to: lastDate,
-            max_days: survey?.max_days ?? 5,
-          })
-        }
+        await setDoc(doc(db, 'settings', 'leave_survey'), {
+          is_open: true,
+          from: firstDate,
+          to: lastDate,
+          max_days: survey?.max_days ?? 5,
+        })
       }
 
       // 2. Build sheet map: date → Set<soldierId>
