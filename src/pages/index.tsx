@@ -236,6 +236,7 @@ export default function HomePage() {
             finalLeave={finalLeave}
             currentSoldierId={selectedSoldierId}
             myTasksOnly={myTasksOnly}
+            dayStartHour={currentSchedule?.day_start_hour ?? 2}
           />
       }
 

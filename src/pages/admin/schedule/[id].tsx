@@ -255,6 +255,7 @@ export default function EditSchedule() {
                 soldiers={soldiers}
                 finalLeave={finalLeave}
                 builderMode
+                dayStartHour={schedule?.day_start_hour ?? 2}
                 selectedTaskId={selectedTaskId}
                 onSelectTask={id => setSelectedTaskId(prev => prev === id ? null : id)}
                 onRemoveSoldier={async (taskId, soldierId) => {

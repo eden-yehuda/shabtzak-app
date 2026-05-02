@@ -10,6 +10,7 @@ interface Props {
   builderMode?: boolean
   myTasksOnly?: boolean
   selectedTaskId?: string | null
+  dayStartHour?: number
   onSelectTask?: (taskId: string) => void
   onRemoveSoldier?: (taskId: string, soldierId: string) => void
   onMoveTask?: (taskId: string, hourDelta: number) => void
@@ -37,18 +38,8 @@ const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: stri
 }
 const DEFAULT_COL_STYLE = { headBg: '#556070', headText: '#fff', cardBg: '#EEF0F2', cardBorder: '#C8CDD5', cardText: '#222D38', mineBg: '#3A4755' }
 
-// Military day: 02:00–01:59 (24 rows starting at 02:00)
-const DAY_START_HOUR = 2
 const HOURS_PER_DAY = 24
-const DAY_HOURS = Array.from({ length: HOURS_PER_DAY }, (_, i) => (i + DAY_START_HOUR) % HOURS_PER_DAY)
-
-// Home leave: soldier leaves at 10:00, returns next day 10:00
-const HOME_LEAVE_START = 10 // hour
-const HOME_LEAVE_START_ROW = (HOME_LEAVE_START - DAY_START_HOUR + HOURS_PER_DAY) % HOURS_PER_DAY // row 8
-
-function hourToRowIndex(hour: number): number {
-  return (hour - DAY_START_HOUR + HOURS_PER_DAY) % HOURS_PER_DAY
-}
+const HOME_LEAVE_START = 10 // hour soldier departs / returns
 
 function formatHour(h: number): string {
   return String(h).padStart(2, '0') + ':00'
@@ -76,10 +67,16 @@ function addDays(dateStr: string, n: number): string {
 
 export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
-  currentSoldierId, builderMode, myTasksOnly, selectedTaskId, onSelectTask, onRemoveSoldier,
+  currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, onSelectTask, onRemoveSoldier,
   onMoveTask, onResizeTask, onDeleteTask, onMoveTaskToSlot,
   onPairSoldiers, onUnpairSoldier,
 }: Props) {
+  const DAY_START_HOUR = dayStartHour
+  const DAY_HOURS = Array.from({ length: HOURS_PER_DAY }, (_, i) => (i + DAY_START_HOUR) % HOURS_PER_DAY)
+  const HOME_LEAVE_START_ROW = (HOME_LEAVE_START - DAY_START_HOUR + HOURS_PER_DAY) % HOURS_PER_DAY
+  function hourToRowIndex(hour: number): number {
+    return (hour - DAY_START_HOUR + HOURS_PER_DAY) % HOURS_PER_DAY
+  }
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
   const [now, setNow] = useState(() => new Date())
   const [pairingCandidate, setPairingCandidate] = useState<{ taskId: string; soldierId: string } | null>(null)
@@ -98,9 +95,9 @@ export default function ScheduleGrid({
       return next
     })
   }
-  const { days, columns } = useMemo(() => {
+  const { days, allColumns } = useMemo(() => {
     if (tasks.length === 0 && (!myTasksOnly || !currentSoldierId || finalLeave.length === 0)) {
-      return { days: [], columns: [] }
+      return { days: [], allColumns: [] }
     }
 
     const typeSet = new Set(tasks.map(t => t.task_type))
@@ -116,12 +113,12 @@ export default function ScheduleGrid({
     }
 
     const sortedDays = Array.from(taskDays).sort()
-    if (sortedDays.length === 0) return { days: [], columns: [] }
+    if (sortedDays.length === 0) return { days: [], allColumns: [] }
 
     // Ensure columns has at least one entry even if all days are home days
     if (cols.length === 0) cols.push(...COLUMN_ORDER)
 
-    return { days: sortedDays, columns: cols }
+    return { days: sortedDays, allColumns: cols }
   }, [tasks, finalLeave, myTasksOnly, currentSoldierId])
 
   // Auto-collapse past days when day list becomes known
@@ -222,6 +219,20 @@ export default function ScheduleGrid({
         const soldierHome = currentSoldierId ? isHomeDay(day, currentSoldierId) : false
         const soldierReturning = currentSoldierId ? isReturnMorning(day, currentSoldierId) : false
 
+        // Columns for THIS day only: types that have at least one task starting today
+        // or overflowing from previous day
+        const prevDayTasksForCols = tasksByDay[addDays(day, -1)] ?? []
+        const overflowTypes = new Set(prevDayTasksForCols
+          .filter(t => {
+            const endDateStr = isoDate(t.end_datetime)
+            const endH = t.end_datetime.getHours()
+            return endDateStr === day && endH > DAY_START_HOUR
+          })
+          .map(t => t.task_type)
+        )
+        const dayTypeSet = new Set([...dayTasks.map(t => t.task_type), ...Array.from(overflowTypes)])
+        const columns = allColumns.filter(c => dayTypeSet.has(c))
+
         // Build per-column task lookup
         // taskAtRow[col][rowIndex] = task that STARTS at that row
         // overflowRowSpan[col][rowIndex] = custom rowspan override for tasks that overflow from prev day
@@ -245,8 +256,7 @@ export default function ScheduleGrid({
         }
 
         // Detect tasks from previous day that overflow into this day (end_datetime falls on today after 02:00)
-        const prevDayTasks = tasksByDay[addDays(day, -1)] ?? []
-        for (const prevTask of prevDayTasks) {
+        for (const prevTask of prevDayTasksForCols) {
           const endDateStr = isoDate(prevTask.end_datetime)
           const endH = prevTask.end_datetime.getHours()
           if (endDateStr === day && endH > DAY_START_HOUR) {
