@@ -98,13 +98,20 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
 
   type Item = typeof enriched[number]
 
-  // Within a section: assigned-first, then by availability rank, then optionally commander preference, then by total task count
+  // Within a section: assigned-first, then by availability rank, then by MOST REST (descending),
+  // then optionally commander preference, then by total task count.
+  // Rest hours = time since soldier's last task ended before the selected task starts.
+  // null restHours = soldier has never worked yet → effectively infinite rest → top of list.
   function sortByAvailability(items: Item[], commandersFirst: boolean): Item[] {
     return [...items].sort((a, b) => {
       if (a.isAssignedToSelected !== b.isAssignedToSelected) return a.isAssignedToSelected ? -1 : 1
       const ra = availabilityRank(a)
       const rb = availabilityRank(b)
       if (ra !== rb) return ra - rb
+      // More rest = better. null = infinite rest = best.
+      const restA = a.restHours ?? Number.POSITIVE_INFINITY
+      const restB = b.restHours ?? Number.POSITIVE_INFINITY
+      if (restA !== restB) return restB - restA
       // Commander tie-breaker per section
       if (a.soldier.is_commander !== b.soldier.is_commander) {
         if (commandersFirst) return a.soldier.is_commander ? -1 : 1

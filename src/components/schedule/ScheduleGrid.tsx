@@ -227,15 +227,29 @@ export default function ScheduleGrid({
   }
 
   function helperForDay(dateStr: string) {
-    const leaving = finalLeave
-      .filter(r => r.date === dateStr && r.status === 'approved')
-      .map(r => soldierMap[r.soldier_id]?.full_name)
-      .filter((n): n is string => !!n)
-
     const prev = new Date(dateStr + 'T12:00:00')
     prev.setDate(prev.getDate() - 1)
     const prevStr = isoDate(prev)
 
+    // All approved leave records for this date
+    const homeRecords = finalLeave.filter(r => r.date === dateStr && r.status === 'approved')
+
+    // Split into:
+    //   stayingHome — was on leave yesterday too (continuing home leave)
+    //   leavingToday — going home today (was here yesterday)
+    const stayingHome: string[] = []
+    const leavingToday: string[] = []
+    for (const r of homeRecords) {
+      const wasHomeYesterday = finalLeave.some(f =>
+        f.soldier_id === r.soldier_id && f.date === prevStr && f.status === 'approved'
+      )
+      const name = soldierMap[r.soldier_id]?.full_name
+      if (!name) continue
+      if (wasHomeYesterday) stayingHome.push(name)
+      else leavingToday.push(name)
+    }
+
+    // Returning today: was on leave yesterday but NOT on leave today
     const returning = finalLeave
       .filter(r => r.date === prevStr && r.status === 'approved')
       .filter(r => !finalLeave.some(f => f.date === dateStr && f.soldier_id === r.soldier_id && f.status === 'approved'))
@@ -243,8 +257,8 @@ export default function ScheduleGrid({
       .filter((n): n is string => !!n)
 
     const totalActive = soldiers.filter(s => s.is_active).length
-    const present = totalActive - leaving.length
-    return { leaving, returning, present }
+    const present = totalActive - homeRecords.length
+    return { leavingToday, stayingHome, returning, present }
   }
 
   if (days.length === 0) {
@@ -343,9 +357,14 @@ export default function ScheduleGrid({
               )}
               {helper && (
                 <div className="flex gap-2 text-xs text-slate-500 flex-wrap">
-                  {helper.leaving.length > 0 && (
+                  {helper.leavingToday.length > 0 && (
                     <span className="bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full">
-                      יציאה הביתה ב-{formatHour(HOME_LEAVE_START)}: {helper.leaving.join(', ')}
+                      יוצא הביתה ב-{formatHour(HOME_LEAVE_START)}: {helper.leavingToday.join(', ')}
+                    </span>
+                  )}
+                  {helper.stayingHome.length > 0 && (
+                    <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
+                      נשאר בבית: {helper.stayingHome.join(', ')}
                     </span>
                   )}
                   {helper.returning.length > 0 && (
