@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import type { Soldier, Assignment, Task, LeaveRequest } from '@/types'
 import { createAssignment } from '@/lib/firestore'
 import { hoursGap } from '@/utils/dateUtils'
+import { isAllowedConcurrent } from '@/utils/validation'
 
 interface Props {
   soldiers: Soldier[]
@@ -76,7 +77,8 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
       isConcurrent = myTasks.some(t =>
         t.id !== selectedTaskId &&
         t.start_datetime < selectedTask.end_datetime &&
-        t.end_datetime > selectedTask.start_datetime
+        t.end_datetime > selectedTask.start_datetime &&
+        !isAllowedConcurrent(t.task_type, selectedTask.task_type)
       )
     }
 

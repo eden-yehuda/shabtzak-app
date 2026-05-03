@@ -4,6 +4,18 @@ import { doTasksOverlap, hoursGap } from './dateUtils'
 const MIN_REST_HOURS = 8
 const MAX_HOUR_IMBALANCE = 4
 
+// Pairs of task types that are explicitly allowed to overlap for the same soldier.
+// Order doesn't matter (checked both ways).
+export const ALLOWED_CONCURRENT_TYPES: Array<[string, string]> = [
+  ['תורן רס"פ', 'כ"כ ב'],
+]
+
+export function isAllowedConcurrent(typeA: string, typeB: string): boolean {
+  return ALLOWED_CONCURRENT_TYPES.some(([a, b]) =>
+    (a === typeA && b === typeB) || (a === typeB && b === typeA)
+  )
+}
+
 export function validateSchedule(
   tasks: Task[],
   assignments: Assignment[],
@@ -70,7 +82,7 @@ export function validateSchedule(
         if (doTasksOverlap(
           { start: sorted[i].start_datetime, end: sorted[i].end_datetime },
           { start: sorted[j].start_datetime, end: sorted[j].end_datetime }
-        )) {
+        ) && !isAllowedConcurrent(sorted[i].task_type, sorted[j].task_type)) {
           errors.push({
             type: 'error',
             soldier_id,

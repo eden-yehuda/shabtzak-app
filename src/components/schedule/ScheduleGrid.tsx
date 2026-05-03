@@ -26,19 +26,20 @@ interface Props {
 }
 
 // Visual order right-to-left (RTL)
-const COLUMN_ORDER = ['תרג"ד', 'סיור', 'כוננות', 'כ"כ א', 'כ"כ ב', 'כ"כ ג', 'אחורית', 'ש"ג', 'של"ז']
+const COLUMN_ORDER = ['תרג"ד', 'סיור', 'כ"כ ג', 'כ"כ ב', 'כוננות', 'כ"כ א', 'אחורית', 'ש"ג', 'של"ז', 'תורן רס"פ']
 
 // Colors per column type
 const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: string; cardBorder: string; cardText: string; mineBg: string }> = {
-  'תרג"ד':  { headBg: '#8B5E3C', headText: '#fff', cardBg: '#FDF3E7', cardBorder: '#E8C99A', cardText: '#4A2E0A', mineBg: '#6B4220' },
-  'סיור':    { headBg: '#3B6E52', headText: '#fff', cardBg: '#E8F5EE', cardBorder: '#A8D5BC', cardText: '#1A3D2A', mineBg: '#2D5540' },
-  'כוננות':  { headBg: '#4A5E88', headText: '#fff', cardBg: '#EAF0F8', cardBorder: '#B0C4E4', cardText: '#1A2D50', mineBg: '#38507A' },
-  'כ"כ א':  { headBg: '#516B85', headText: '#fff', cardBg: '#EEF2F7', cardBorder: '#C4D3E3', cardText: '#1E3550', mineBg: '#3A5470' },
-  'כ"כ ב':  { headBg: '#40787A', headText: '#fff', cardBg: '#EAF4F4', cardBorder: '#B5D5D5', cardText: '#153A3A', mineBg: '#2E6062' },
-  'כ"כ ג':  { headBg: '#4A6878', headText: '#fff', cardBg: '#EBF2F6', cardBorder: '#B8CFDA', cardText: '#162535', mineBg: '#365060' },
-  'אחורית': { headBg: '#7A6652', headText: '#fff', cardBg: '#F4EFE7', cardBorder: '#D8CBBA', cardText: '#3D2E18', mineBg: '#61503E' },
-  'ש"ג':    { headBg: '#4A7A5E', headText: '#fff', cardBg: '#EAF3EE', cardBorder: '#B8D5C5', cardText: '#1A3828', mineBg: '#365E48' },
-  'של"ז':   { headBg: '#635E88', headText: '#fff', cardBg: '#EDEAF6', cardBorder: '#C5C0DC', cardText: '#2A2448', mineBg: '#4D4870' },
+  'תרג"ד':    { headBg: '#8B5E3C', headText: '#fff', cardBg: '#FDF3E7', cardBorder: '#E8C99A', cardText: '#4A2E0A', mineBg: '#6B4220' },
+  'סיור':      { headBg: '#3B6E52', headText: '#fff', cardBg: '#E8F5EE', cardBorder: '#A8D5BC', cardText: '#1A3D2A', mineBg: '#2D5540' },
+  'כוננות':    { headBg: '#4A5E88', headText: '#fff', cardBg: '#EAF0F8', cardBorder: '#B0C4E4', cardText: '#1A2D50', mineBg: '#38507A' },
+  'כ"כ א':    { headBg: '#516B85', headText: '#fff', cardBg: '#EEF2F7', cardBorder: '#C4D3E3', cardText: '#1E3550', mineBg: '#3A5470' },
+  'כ"כ ב':    { headBg: '#40787A', headText: '#fff', cardBg: '#EAF4F4', cardBorder: '#B5D5D5', cardText: '#153A3A', mineBg: '#2E6062' },
+  'כ"כ ג':    { headBg: '#4A6878', headText: '#fff', cardBg: '#EBF2F6', cardBorder: '#B8CFDA', cardText: '#162535', mineBg: '#365060' },
+  'אחורית':   { headBg: '#7A6652', headText: '#fff', cardBg: '#F4EFE7', cardBorder: '#D8CBBA', cardText: '#3D2E18', mineBg: '#61503E' },
+  'ש"ג':      { headBg: '#4A7A5E', headText: '#fff', cardBg: '#EAF3EE', cardBorder: '#B8D5C5', cardText: '#1A3828', mineBg: '#365E48' },
+  'של"ז':     { headBg: '#635E88', headText: '#fff', cardBg: '#EDEAF6', cardBorder: '#C5C0DC', cardText: '#2A2448', mineBg: '#4D4870' },
+  'תורן רס"פ': { headBg: '#A85D5D', headText: '#fff', cardBg: '#F8E9E9', cardBorder: '#E0B5B5', cardText: '#4D1F1F', mineBg: '#7A3F3F' },
 }
 const DEFAULT_COL_STYLE = { headBg: '#556070', headText: '#fff', cardBg: '#EEF0F2', cardBorder: '#C8CDD5', cardText: '#222D38', mineBg: '#3A4755' }
 
