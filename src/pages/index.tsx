@@ -5,7 +5,7 @@ import InquiryModal from '@/components/InquiryModal'
 import LeaveRequestModal from '@/components/LeaveRequestModal'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
-import { useScheduleTasks } from '@/hooks/useSchedule'
+import { usePublishedSchedule } from '@/hooks/usePublishedSchedule'
 import { onSnapshot, query, orderBy, doc } from 'firebase/firestore'
 import { schedulesRef } from '@/lib/firestore'
 import { db } from '@/lib/firebase'
@@ -82,7 +82,8 @@ export default function HomePage() {
   }, [schedules])
 
   const currentSchedule = schedules[scheduleIdx] ?? null
-  const { tasks, assignments } = useScheduleTasks(currentSchedule?.id ?? null)
+  // Soldier view reads the LATEST PUBLISHED SNAPSHOT — not the live working copy
+  const { tasks, assignments } = usePublishedSchedule(currentSchedule?.id ?? null)
 
   const filteredSoldiers = useMemo(() =>
     soldiers.filter(s => s.full_name.includes(search)).slice(0, 20),

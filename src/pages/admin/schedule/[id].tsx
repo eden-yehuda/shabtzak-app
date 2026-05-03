@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/router'
-import { doc, updateDoc, deleteDoc, addDoc, collection, serverTimestamp, Timestamp } from 'firebase/firestore'
+import { doc, updateDoc, deleteDoc, addDoc, collection, serverTimestamp, Timestamp, query, where, orderBy, onSnapshot, getDocs, writeBatch } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { publishedVersionsRef } from '@/lib/firestore'
 import AdminLayout from '@/components/layout/AdminLayout'
 import ScheduleGrid from '@/components/schedule/ScheduleGrid'
 import SoldierPanel from '@/components/admin/SoldierPanel'
@@ -73,12 +74,47 @@ export default function EditSchedule() {
     setLlmChecked(false)
   }, [tasks, assignments, soldiers, finalLeave, scheduleId])
 
-  // Auto-unpublish when opening edit page of published schedule
+  // NOTE: do NOT auto-unpublish on edit. The published version (snapshot) remains visible
+  // to soldiers regardless of edits to the working copy. Only an explicit "publish"
+  // action saves a new snapshot, and "unpublish" deletes the snapshot.
+
+  // Live list of published versions for this schedule (newest first)
+  const [publishedVersions, setPublishedVersions] = useState<Array<{
+    id: string
+    published_at: Date
+    published_by: string
+    task_count: number
+    assignment_count: number
+  }>>([])
   useEffect(() => {
-    if (!scheduleId || schedule?.status !== 'published') return
-    updateDoc(doc(db, 'schedules', scheduleId), { status: 'draft', updated_at: serverTimestamp() })
-      .catch(() => {})
-  }, [schedule?.id]) // only runs when schedule ID changes (i.e., on load)
+    if (!scheduleId) return
+    const q = query(
+      publishedVersionsRef(),
+      where('schedule_id', '==', scheduleId),
+      orderBy('published_at', 'desc')
+    )
+    return onSnapshot(q, snap => {
+      setPublishedVersions(snap.docs.map(d => {
+        const data = d.data()
+        return {
+          id: d.id,
+          published_at: data.published_at?.toDate?.() ?? new Date(),
+          published_by: data.published_by ?? 'משתמש לא ידוע',
+          task_count: Array.isArray(data.tasks) ? data.tasks.length : 0,
+          assignment_count: Array.isArray(data.assignments) ? data.assignments.length : 0,
+        }
+      }))
+    })
+  }, [scheduleId])
+
+  const [showVersionsPanel, setShowVersionsPanel] = useState(false)
+  const hasPublishedVersion = publishedVersions.length > 0
+  const latestPublishedAt = publishedVersions[0]?.published_at ?? null
+  // "Has unpublished changes" if the working copy was updated after the latest publish
+  const hasUnpublishedChanges = latestPublishedAt && schedule?.updated_at
+    ? schedule.updated_at.getTime() > latestPublishedAt.getTime()
+    : !hasPublishedVersion // never published → has changes
+
 
   async function runLlmCheck() {
     if (!schedule) return
@@ -106,22 +142,111 @@ export default function EditSchedule() {
   }
 
   async function publish() {
-    if (!scheduleId || publishing) return
+    if (!scheduleId || publishing || !schedule) return
     setPublishing(true)
     try {
-      await updateDoc(doc(db, 'schedules', scheduleId), { status: 'published', updated_at: serverTimestamp() })
-    } catch { alert('פרסום נכשל — נסה שוב') }
+      // Snapshot working copy → published_versions
+      await addDoc(publishedVersionsRef(), {
+        schedule_id: scheduleId,
+        schedule_name: schedule.name,
+        schedule_start: Timestamp.fromDate(schedule.start_datetime),
+        schedule_end: Timestamp.fromDate(schedule.end_datetime),
+        day_start_hour: schedule.day_start_hour ?? 2,
+        home_leave_hour: schedule.home_leave_hour ?? null,
+        tasks: tasks.map(t => ({
+          id: t.id,
+          task_type: t.task_type,
+          task_name: t.task_name,
+          start_datetime: Timestamp.fromDate(t.start_datetime),
+          end_datetime: Timestamp.fromDate(t.end_datetime),
+          requires_commander: t.requires_commander ?? false,
+          required_people_count: t.required_people_count ?? 0,
+          notes: t.notes ?? '',
+        })),
+        assignments: assignments.map(a => ({
+          id: a.id,
+          task_id: a.task_id,
+          soldier_id: a.soldier_id,
+          order: a.order ?? 1,
+          alternating_group: a.alternating_group ?? null,
+          note: a.note ?? '',
+        })),
+        published_at: serverTimestamp(),
+        published_by: typeof window !== 'undefined' ? (localStorage.getItem('admin_name') ?? 'מנהל') : 'מנהל',
+      })
+      // Mark schedule as published (status flag still useful for filtering)
+      await updateDoc(doc(db, 'schedules', scheduleId), { status: 'published' })
+    } catch (e) { console.error(e); alert('פרסום נכשל — נסה שוב') }
     finally { setPublishing(false) }
     setConfirmPublish(false)
   }
 
   async function unpublish() {
     if (!scheduleId || unpublishing) return
+    if (!confirm('ביטול פרסום ימחוק את כל הגרסאות המפורסמות של השבצ"ק. החיילים לא יראו אותו יותר. להמשיך?')) return
     setUnpublishing(true)
     try {
-      await updateDoc(doc(db, 'schedules', scheduleId), { status: 'draft', updated_at: serverTimestamp() })
-    } catch { alert('ביטול פרסום נכשל') }
+      // Delete all published version snapshots for this schedule
+      const q = query(publishedVersionsRef(), where('schedule_id', '==', scheduleId))
+      const snap = await getDocs(q)
+      const batch = writeBatch(db)
+      snap.docs.forEach(d => batch.delete(d.ref))
+      await batch.commit()
+      // Mark schedule status as draft
+      await updateDoc(doc(db, 'schedules', scheduleId), { status: 'draft' })
+    } catch (e) { console.error(e); alert('ביטול פרסום נכשל') }
     finally { setUnpublishing(false) }
+  }
+
+  async function restoreVersion(versionId: string) {
+    if (!scheduleId) return
+    if (!confirm('שחזור גרסה ימחק את המצב הנוכחי של השבצ"ק ויחליף אותו בגרסה הזו. להמשיך?')) return
+    try {
+      // Load the version
+      const verSnap = await getDocs(query(publishedVersionsRef(), where('schedule_id', '==', scheduleId)))
+      const verDoc = verSnap.docs.find(d => d.id === versionId)
+      if (!verDoc) { alert('הגרסה לא נמצאה'); return }
+      const verData = verDoc.data()
+
+      // Delete all current tasks + assignments for this schedule
+      const taskSnap = await getDocs(query(collection(db, 'tasks'), where('schedule_id', '==', scheduleId)))
+      const assignSnap = await getDocs(query(collection(db, 'assignments'), where('task_id', 'in', taskSnap.docs.map(d => d.id).slice(0, 30))))
+      const batch1 = writeBatch(db)
+      taskSnap.docs.forEach(d => batch1.delete(d.ref))
+      assignSnap.docs.forEach(d => batch1.delete(d.ref))
+      await batch1.commit()
+
+      // Re-create tasks (with new IDs); map old→new task IDs
+      const oldToNewTaskId: Record<string, string> = {}
+      for (const t of (verData.tasks || [])) {
+        const newDoc = await addDoc(collection(db, 'tasks'), {
+          schedule_id: scheduleId,
+          task_type: t.task_type,
+          task_name: t.task_name,
+          start_datetime: t.start_datetime,
+          end_datetime: t.end_datetime,
+          requires_commander: t.requires_commander,
+          required_people_count: t.required_people_count,
+          notes: t.notes ?? '',
+          difficulty: 'normal',
+        })
+        oldToNewTaskId[t.id] = newDoc.id
+      }
+      // Re-create assignments using new task IDs
+      for (const a of (verData.assignments || [])) {
+        const newTaskId = oldToNewTaskId[a.task_id]
+        if (!newTaskId) continue
+        await addDoc(collection(db, 'assignments'), {
+          task_id: newTaskId,
+          soldier_id: a.soldier_id,
+          order: a.order ?? 1,
+          ...(a.alternating_group ? { alternating_group: a.alternating_group } : {}),
+          ...(a.note ? { note: a.note } : {}),
+        })
+      }
+      await touchSchedule()
+      alert('הגרסה שוחזרה בהצלחה')
+    } catch (e) { console.error(e); alert('שחזור נכשל: ' + (e as Error).message) }
   }
 
   const errorCount = validationErrors.filter(e => e.type === 'error').length
@@ -358,15 +483,27 @@ export default function EditSchedule() {
             {llmLoading ? '🤖 בודק...' : llmChecked ? '🤖 ✓ נבדק' : '🤖 בדוק שבצ"ק'}
           </button>
 
-          {schedule.status === 'published' ? (
+          <button onClick={() => setShowVersionsPanel(true)} disabled={publishedVersions.length === 0}
+            className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-30 disabled:cursor-not-allowed"
+            title={publishedVersions.length > 0 ? `${publishedVersions.length} גרסאות שמורות` : 'אין גרסאות מפורסמות עדיין'}>
+            🕒 גרסאות {publishedVersions.length > 0 && `(${publishedVersions.length})`}
+          </button>
+
+          <button onClick={() => setConfirmPublish(true)} disabled={publishing}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold transition disabled:opacity-60 disabled:cursor-wait ${
+              hasUnpublishedChanges ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+            }`}>
+            {publishing
+              ? '⏳ מפרסם...'
+              : hasPublishedVersion
+                ? (hasUnpublishedChanges ? '📤 פרסם עדכון' : '✓ פורסם — אין שינויים')
+                : '📤 פרסם ✓'}
+          </button>
+
+          {hasPublishedVersion && (
             <button onClick={unpublish} disabled={unpublishing}
-              className="border border-slate-300 text-slate-600 rounded-xl px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60 disabled:cursor-wait">
-              {unpublishing ? '⏳ מבטל פרסום...' : 'בטל פרסום'}
-            </button>
-          ) : (
-            <button onClick={() => setConfirmPublish(true)} disabled={publishing}
-              className="bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-semibold hover:bg-green-700 transition disabled:opacity-60 disabled:cursor-wait">
-              {publishing ? '⏳ מפרסם...' : 'פרסם ✓'}
+              className="border border-red-300 text-red-700 rounded-xl px-4 py-2 text-sm font-semibold hover:bg-red-50 disabled:opacity-60 disabled:cursor-wait">
+              {unpublishing ? '⏳ מבטל...' : '🗑 בטל פרסום'}
             </button>
           )}
         </div>
@@ -399,6 +536,47 @@ export default function EditSchedule() {
               {validationErrors.length > 0
                 ? <ValidationPanel errors={validationErrors} />
                 : <p className="text-sm text-green-700 text-center py-8">אין שגיאות בשבצ&quot;ק</p>}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Side drawer: published versions history */}
+      {showVersionsPanel && (
+        <>
+          <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setShowVersionsPanel(false)} />
+          <div className="fixed top-0 left-0 h-full w-[28rem] max-w-[90vw] bg-white shadow-2xl z-50 overflow-y-auto" dir="rtl">
+            <div className="sticky top-0 bg-white border-b border-slate-200 px-4 py-3 flex justify-between items-center">
+              <div className="font-bold text-slate-800">🕒 היסטוריית גרסאות מפורסמות</div>
+              <button onClick={() => setShowVersionsPanel(false)}
+                className="text-slate-400 hover:text-slate-700 text-xl leading-none px-2">×</button>
+            </div>
+            <div className="p-4 flex flex-col gap-2">
+              {publishedVersions.length === 0
+                ? <p className="text-sm text-slate-400 text-center py-8">אין גרסאות מפורסמות עדיין</p>
+                : publishedVersions.map((v, i) => (
+                  <div key={v.id} className={`rounded-lg border p-3 ${i === 0 ? 'bg-green-50 border-green-300' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <div className="font-semibold text-slate-800 text-sm">
+                          {i === 0 && <span className="text-green-700">▶ פעילה — </span>}
+                          גרסה #{publishedVersions.length - i}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          {v.published_at.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', dateStyle: 'short', timeStyle: 'short' })}
+                        </div>
+                        <div className="text-[11px] text-slate-500">פורסם ע&quot;י: {v.published_by}</div>
+                        <div className="text-[11px] text-slate-400 mt-1">
+                          {v.task_count} משימות • {v.assignment_count} שיבוצים
+                        </div>
+                      </div>
+                      <button onClick={() => restoreVersion(v.id)}
+                        className="text-xs bg-white border border-slate-300 text-slate-700 px-3 py-1 rounded-lg hover:border-navy hover:text-navy transition shrink-0">
+                        ↶ שחזר
+                      </button>
+                    </div>
+                  </div>
+                ))}
             </div>
           </div>
         </>

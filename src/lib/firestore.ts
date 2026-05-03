@@ -65,3 +65,34 @@ export const updateLeaveStatus = (
 
 // --- Task Types ---
 export const taskTypesRef = () => collection(db, 'task_types')
+
+// --- Published Versions (snapshots of published schedules) ---
+export const publishedVersionsRef = () => collection(db, 'published_versions')
+export interface PublishedVersionSnapshot {
+  schedule_id: string
+  schedule_name: string
+  schedule_start: Timestamp
+  schedule_end: Timestamp
+  day_start_hour?: number
+  home_leave_hour?: number
+  tasks: Array<{
+    id: string
+    task_type: string
+    task_name: string
+    start_datetime: Timestamp
+    end_datetime: Timestamp
+    requires_commander: boolean
+    required_people_count: number
+    notes?: string
+  }>
+  assignments: Array<{
+    id: string
+    task_id: string
+    soldier_id: string
+    order?: number
+    alternating_group?: number
+    note?: string
+  }>
+  published_at: Timestamp
+  published_by: string
+}
