@@ -9,16 +9,19 @@ interface Props {
   taskTypes: TaskType[]
   filter: 'all' | 'commanders' | 'soldiers'
   taskTypeFilter: string // '' = grouped by type, else show individual tasks of that type
+  allTasks?: Task[]        // optional: tasks across all schedules (for grand-total column)
+  allAssignments?: Assignment[]  // optional: assignments across all schedules
 }
 
 const TYPE_ORDER = ['כ"כ א', 'כ"כ ב', 'אחורית', 'ש"ג', 'של"ז']
 const DAY_NAMES = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
 
 function SoldierRows({
-  rows, avgHours,
+  rows, avgHours, grandTotalsBySoldier,
 }: {
   rows: { soldier: Soldier; cells: (number | null)[]; total: number }[]
   avgHours: number
+  grandTotalsBySoldier?: Record<string, number>
 }) {
   return (
     <>
@@ -26,6 +29,7 @@ function SoldierRows({
         const isHigh = avgHours > 0 && total > avgHours * 1.2
         const isLow = avgHours > 0 && total > 0 && total < avgHours * 0.8
         const rowBg = isHigh ? 'bg-red-50' : isLow ? 'bg-green-50' : ''
+        const grandTotal = grandTotalsBySoldier?.[soldier.id] ?? 0
         return (
           <tr key={soldier.id} className={`border-b border-slate-100 ${rowBg || 'hover:bg-slate-50'}`}>
             <td className={`px-3 py-2 font-medium sticky right-0 z-10 whitespace-nowrap border-l border-slate-200 ${rowBg || 'bg-white'}`}>
@@ -40,6 +44,11 @@ function SoldierRows({
             <td className="px-3 py-2 text-center font-bold">
               {total > 0 ? `${total}h` : '—'}
             </td>
+            {grandTotalsBySoldier && (
+              <td className="px-3 py-2 text-center font-bold bg-slate-50 border-r-2 border-slate-300 text-purple-800">
+                {grandTotal > 0 ? `${grandTotal}h` : '—'}
+              </td>
+            )}
           </tr>
         )
       })}
@@ -47,7 +56,20 @@ function SoldierRows({
   )
 }
 
-export default function JusticeTable({ tasks, assignments, soldiers, taskTypes, filter, taskTypeFilter }: Props) {
+export default function JusticeTable({ tasks, assignments, soldiers, taskTypes, filter, taskTypeFilter, allTasks, allAssignments }: Props) {
+  // Grand totals across ALL schedules (per soldier)
+  const grandTotalsBySoldier = useMemo(() => {
+    if (!allTasks || !allAssignments) return undefined
+    const totals: Record<string, number> = {}
+    const taskById = new Map(allTasks.map(t => [t.id, t]))
+    for (const a of allAssignments) {
+      const t = taskById.get(a.task_id)
+      if (!t) continue
+      totals[a.soldier_id] = (totals[a.soldier_id] ?? 0) + taskDurationHours(t.start_datetime, t.end_datetime)
+    }
+    return totals
+  }, [allTasks, allAssignments])
+
   const typeMap = useMemo(() => {
     const m: Record<string, TaskType> = {}
     for (const tt of taskTypes) m[tt.name] = tt
@@ -142,10 +164,15 @@ export default function JusticeTable({ tasks, assignments, soldiers, taskTypes, 
                 )
               })}
               <th className="px-3 py-2 font-semibold text-center border-b border-slate-200">סה&quot;כ ש׳</th>
+              {grandTotalsBySoldier && (
+                <th className="px-3 py-2 font-semibold text-center border-b border-slate-200 bg-purple-50 text-purple-800 border-r-2 border-slate-300">
+                  סה&quot;כ כל השבצ&quot;קים
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
-            <SoldierRows rows={rows} avgHours={avgHours} />
+            <SoldierRows rows={rows} avgHours={avgHours} grandTotalsBySoldier={grandTotalsBySoldier} />
           </tbody>
         </table>
       </div>
@@ -173,10 +200,15 @@ export default function JusticeTable({ tasks, assignments, soldiers, taskTypes, 
               )
             })}
             <th className="px-3 py-2 font-semibold text-center border-b border-slate-200">סה&quot;כ ש׳</th>
+            {grandTotalsBySoldier && (
+              <th className="px-3 py-2 font-semibold text-center border-b border-slate-200 bg-purple-50 text-purple-800 border-r-2 border-slate-300">
+                סה&quot;כ כל השבצ&quot;קים
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
-          <SoldierRows rows={rows} avgHours={avgHours} />
+          <SoldierRows rows={rows} avgHours={avgHours} grandTotalsBySoldier={grandTotalsBySoldier} />
         </tbody>
       </table>
     </div>

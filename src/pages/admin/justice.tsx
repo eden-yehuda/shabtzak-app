@@ -4,8 +4,10 @@ import JusticeTable from '@/components/admin/JusticeTable'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
 import { useScheduleTasks } from '@/hooks/useSchedule'
+import { useAllSchedulesTotals } from '@/hooks/useAllSchedulesTotals'
 import { onSnapshot, query, orderBy } from 'firebase/firestore'
 import { schedulesRef, taskTypesRef } from '@/lib/firestore'
+import { taskDurationHours } from '@/utils/dateUtils'
 import type { Schedule, TaskType } from '@/types'
 
 const DAY_NAMES = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
@@ -63,6 +65,7 @@ export default function JusticePage() {
   }, [])
 
   const { tasks, assignments } = useScheduleTasks(selectedId || null)
+  const { allTasks, allAssignments } = useAllSchedulesTotals()
 
   const usedTaskTypes = Array.from(new Set(tasks.map(t => t.task_type))).sort()
 
@@ -154,74 +157,95 @@ export default function JusticePage() {
           taskTypes={taskTypes}
           filter={filter}
           taskTypeFilter={taskTypeFilter}
+          allTasks={allTasks}
+          allAssignments={allAssignments}
         />
       )}
 
       {tab === 'leave' && (
-        <div className="overflow-x-auto">
-          {leaveDates.length === 0
-            ? <p className="text-slate-400 text-center py-8">בחר שבצ&quot;ק עם טווח תאריכים</p>
-            : (
-              <table className="text-sm border-collapse" style={{ minWidth: 'max-content' }}>
-                <thead>
-                  <tr className="bg-slate-50 text-right">
-                    <th className="px-3 py-2 font-semibold sticky right-0 bg-slate-50 z-10 border-b border-slate-200">שם</th>
-                    {leaveDates.map(d => (
-                      <th key={d} className="px-2 py-2 text-center font-semibold border-b border-slate-200 min-w-[52px] text-xs">
-                        {dayLabel(d)}
-                      </th>
-                    ))}
-                    <th className="px-3 py-2 text-center font-semibold border-b border-slate-200">סה&quot;כ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedSoldiers.map(s => {
-                    const count = leaveDates.filter(d =>
-                      finalLeave.some(r => r.soldier_id === s.id && r.date === d && r.status === 'approved')
-                    ).length
-                    return (
-                      <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
-                        <td className="px-3 py-2 font-medium sticky right-0 bg-white z-10 whitespace-nowrap border-l border-slate-200">
-                          {s.full_name}
-                          {s.is_commander && <span className="text-xs text-navy mr-1">★</span>}
-                        </td>
-                        {leaveDates.map(d => {
-                          const onLeave = finalLeave.some(r => r.soldier_id === s.id && r.date === d && r.status === 'approved')
-                          return (
-                            <td key={d} className="px-1 py-1 text-center">
-                              {onLeave
-                                ? <span className="inline-block w-7 h-7 rounded-md bg-blue-100 text-blue-700 text-xs font-bold leading-7">✓</span>
-                                : <span className="text-slate-200 text-xs">—</span>}
-                            </td>
-                          )
-                        })}
-                        <td className="px-3 py-2 text-center font-bold text-sm">
-                          {count > 0 ? count : <span className="text-slate-300">—</span>}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
-                    <td className="px-3 py-2 sticky right-0 bg-slate-50 z-10 text-slate-600 text-xs">בחוץ</td>
-                    {leaveDates.map(d => {
-                      const n = finalLeave.filter(r => r.date === d && r.status === 'approved').length
-                      return (
-                        <td key={d} className="px-1 py-2 text-center">
-                          {n > 0
-                            ? <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${n >= 8 ? 'bg-red-100 text-red-700' : n >= 6 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{n}</span>
-                            : <span className="text-slate-300 text-xs">—</span>}
-                        </td>
-                      )
-                    })}
-                    <td />
-                  </tr>
-                </tfoot>
-              </table>
-            )}
-        </div>
+        <LeaveSummary
+          soldiers={sortedSoldiers}
+          finalLeave={finalLeave}
+          allTasks={allTasks}
+          allAssignments={allAssignments}
+        />
       )}
     </AdminLayout>
+  )
+}
+
+// Summary view: per soldier, days at home vs days on tasks (across all schedules)
+function LeaveSummary({
+  soldiers, finalLeave, allTasks, allAssignments,
+}: {
+  soldiers: Array<{ id: string; full_name: string; is_commander: boolean }>
+  finalLeave: Array<{ soldier_id: string; date: string; status: string }>
+  allTasks: Array<{ id: string; start_datetime: Date; end_datetime: Date }>
+  allAssignments: Array<{ task_id: string; soldier_id: string }>
+}) {
+  // Days each soldier had a task assignment
+  const taskDaysBySoldier = useMemo(() => {
+    const map: Record<string, Set<string>> = {}
+    const taskById = new Map(allTasks.map(t => [t.id, t]))
+    for (const a of allAssignments) {
+      const t = taskById.get(a.task_id)
+      if (!t) continue
+      if (!map[a.soldier_id]) map[a.soldier_id] = new Set()
+      map[a.soldier_id].add(isoDate(t.start_datetime))
+    }
+    return map
+  }, [allTasks, allAssignments])
+
+  // Days each soldier was at home (approved leave)
+  const homeDaysBySoldier = useMemo(() => {
+    const map: Record<string, Set<string>> = {}
+    for (const r of finalLeave) {
+      if (r.status !== 'approved') continue
+      if (!map[r.soldier_id]) map[r.soldier_id] = new Set()
+      map[r.soldier_id].add(r.date)
+    }
+    return map
+  }, [finalLeave])
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="text-sm border-collapse w-full max-w-2xl">
+        <thead>
+          <tr className="bg-slate-50 text-right">
+            <th className="px-4 py-2 font-semibold border-b border-slate-200">שם</th>
+            <th className="px-4 py-2 text-center font-semibold border-b border-slate-200">🏠 ימי בית</th>
+            <th className="px-4 py-2 text-center font-semibold border-b border-slate-200">📋 ימי משימות</th>
+            <th className="px-4 py-2 text-center font-semibold border-b border-slate-200">סה&quot;כ ימים</th>
+          </tr>
+        </thead>
+        <tbody>
+          {soldiers.map(s => {
+            const homeDays = homeDaysBySoldier[s.id]?.size ?? 0
+            const taskDays = taskDaysBySoldier[s.id]?.size ?? 0
+            return (
+              <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
+                <td className="px-4 py-2 font-medium whitespace-nowrap">
+                  {s.full_name}
+                  {s.is_commander && <span className="text-xs text-navy mr-1">★</span>}
+                </td>
+                <td className="px-4 py-2 text-center">
+                  {homeDays > 0
+                    ? <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">{homeDays}</span>
+                    : <span className="text-slate-300">—</span>}
+                </td>
+                <td className="px-4 py-2 text-center">
+                  {taskDays > 0
+                    ? <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">{taskDays}</span>
+                    : <span className="text-slate-300">—</span>}
+                </td>
+                <td className="px-4 py-2 text-center font-bold text-slate-700">
+                  {homeDays + taskDays}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }

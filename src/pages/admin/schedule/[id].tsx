@@ -338,11 +338,6 @@ export default function EditSchedule() {
             + הוסף משימה
           </button>
 
-          <button onClick={() => setShowSyncModal(true)}
-            className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition">
-            📊 סנכרון שבצ&quot;ק
-          </button>
-
           <button onClick={performUndo} disabled={undoStack.length === 0}
             title={undoStack.length > 0 ? `ביטול: ${undoStack[undoStack.length - 1].label} (Ctrl+Z)` : 'אין פעולה לביטול'}
             className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-30 disabled:cursor-not-allowed">

@@ -22,6 +22,17 @@ function addDays(dateStr: string, n: number) {
   return isoDate(d)
 }
 
+function fmtHourRange(t: Task): string {
+  const fmt = (d: Date) => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+  return `${fmt(t.start_datetime)}–${fmt(t.end_datetime)}`
+}
+
+function fmtDay(dateStr: string): string {
+  const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
+  const d = new Date(dateStr + 'T12:00:00')
+  return `${days[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
+}
+
 function getSoldierStatus(soldier: Soldier, taskDate: string | null, finalLeave: LeaveRequest[]): { label: string; color: string } {
   if (!taskDate) return { label: 'נמצא', color: 'text-green-700 bg-green-50' }
   const isHome = finalLeave.some(r => r.soldier_id === soldier.id && r.date === taskDate && r.status === 'approved')
@@ -31,14 +42,18 @@ function getSoldierStatus(soldier: Soldier, taskDate: string | null, finalLeave:
   return { label: 'נמצא', color: 'text-green-700 bg-green-50' }
 }
 
-function statusPriority(label: string) {
-  if (label === 'נמצא' || label === 'חוזר') return 0
-  if (label === 'יוצא') return 1
-  return 2 // בית last
+// Availability rank — lower = more preferred for assignment
+function availabilityRank(item: { status: { label: string }; hoursToday: number }): number {
+  if (item.status.label === 'בית') return 5
+  if (item.status.label === 'יוצא') return 4
+  if (item.status.label === 'חוזר') return 3
+  if (item.hoursToday > 0) return 2 // available but already has tasks today
+  return 1 // best: fully available, no tasks today
 }
 
 export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave, selectedTaskId, onAssigned }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [soldierModalId, setSoldierModalId] = useState<string | null>(null)
 
   const selectedTask = useMemo(() => tasks.find(t => t.id === selectedTaskId) ?? null, [tasks, selectedTaskId])
   const taskDate = selectedTask ? isoDate(selectedTask.start_datetime) : null
@@ -65,47 +80,40 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
       )
     }
 
+    // Hours already assigned that day (the day of the selected task)
+    let hoursToday = 0
+    if (taskDate) {
+      for (const t of myTasks) {
+        if (isoDate(t.start_datetime) === taskDate) {
+          hoursToday += (t.end_datetime.getTime() - t.start_datetime.getTime()) / 3_600_000
+        }
+      }
+    }
+
     const status = getSoldierStatus(s, taskDate, finalLeave)
-    return { soldier: s, taskCount, isAssignedToSelected, restHours, status, isConcurrent }
+    return { soldier: s, taskCount, isAssignedToSelected, restHours, status, isConcurrent, hoursToday }
   }), [soldiers, assignments, tasks, selectedTaskId, selectedTask, taskDate, finalLeave])
 
-  // Sort by relevance: assigned first, then by status, then by task count
-  const sorted = useMemo(() => [...enriched].sort((a, b) => {
-    if (a.isAssignedToSelected !== b.isAssignedToSelected) return a.isAssignedToSelected ? -1 : 1
-    const pA = statusPriority(a.status.label)
-    const pB = statusPriority(b.status.label)
-    if (pA !== pB) return pA - pB
-    return a.taskCount - b.taskCount
-  }), [enriched])
+  type Item = typeof enriched[number]
 
-  // Split into commanders and soldiers lists (relevant role first in each section)
-  const commanderList = useMemo(() =>
-    [...sorted].sort((a, b) => {
-      // Assigned always first
+  // Within a section: assigned-first, then by availability rank, then optionally commander preference, then by total task count
+  function sortByAvailability(items: Item[], commandersFirst: boolean): Item[] {
+    return [...items].sort((a, b) => {
       if (a.isAssignedToSelected !== b.isAssignedToSelected) return a.isAssignedToSelected ? -1 : 1
-      // Commanders before soldiers
-      if (a.soldier.is_commander !== b.soldier.is_commander) return a.soldier.is_commander ? -1 : 1
-      const pA = statusPriority(a.status.label)
-      const pB = statusPriority(b.status.label)
-      if (pA !== pB) return pA - pB
+      const ra = availabilityRank(a)
+      const rb = availabilityRank(b)
+      if (ra !== rb) return ra - rb
+      // Commander tie-breaker per section
+      if (a.soldier.is_commander !== b.soldier.is_commander) {
+        if (commandersFirst) return a.soldier.is_commander ? -1 : 1
+        return a.soldier.is_commander ? 1 : -1
+      }
       return a.taskCount - b.taskCount
-    }),
-    [sorted]
-  )
+    })
+  }
 
-  const soldierList = useMemo(() =>
-    [...sorted].sort((a, b) => {
-      // Assigned always first
-      if (a.isAssignedToSelected !== b.isAssignedToSelected) return a.isAssignedToSelected ? -1 : 1
-      // Non-commanders before commanders
-      if (a.soldier.is_commander !== b.soldier.is_commander) return a.soldier.is_commander ? 1 : -1
-      const pA = statusPriority(a.status.label)
-      const pB = statusPriority(b.status.label)
-      if (pA !== pB) return pA - pB
-      return a.taskCount - b.taskCount
-    }),
-    [sorted]
-  )
+  const commanderList = useMemo(() => sortByAvailability(enriched, true), [enriched])
+  const soldierList = useMemo(() => sortByAvailability(enriched, false), [enriched])
 
   const requiresCommander = selectedTask?.requires_commander ?? false
 
@@ -122,7 +130,7 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
     }
   }
 
-  // Task info summary
+  // Task summary
   const taskAssigned = selectedTask ? assignments.filter(a => a.task_id === selectedTaskId).length : 0
   const taskRequired = selectedTask?.required_people_count ?? 0
   const commanderAssigned = selectedTask ? assignments.some(a =>
@@ -130,36 +138,72 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
     soldiers.find(s => s.id === a.soldier_id)?.is_commander
   ) : false
 
-  function renderSoldierButton(item: typeof sorted[0]) {
-    const { soldier, taskCount, isAssignedToSelected, restHours, status, isConcurrent } = item
+  // Soldier modal: show all assignments of a single soldier (no task selected)
+  const modalSoldier = soldierModalId ? soldiers.find(s => s.id === soldierModalId) ?? null : null
+  const modalAssignments = useMemo(() => {
+    if (!soldierModalId) return [] as Array<{ task: Task; date: string }>
+    const list: Array<{ task: Task; date: string }> = []
+    for (const a of assignments) {
+      if (a.soldier_id !== soldierModalId) continue
+      const t = tasks.find(x => x.id === a.task_id)
+      if (t) list.push({ task: t, date: isoDate(t.start_datetime) })
+    }
+    return list.sort((a, b) => a.task.start_datetime.getTime() - b.task.start_datetime.getTime())
+  }, [soldierModalId, assignments, tasks])
+
+  const modalLeaveDays = useMemo(() => {
+    if (!soldierModalId) return [] as string[]
+    return finalLeave
+      .filter(r => r.soldier_id === soldierModalId && r.status === 'approved')
+      .map(r => r.date)
+      .sort()
+  }, [soldierModalId, finalLeave])
+
+  function renderSoldierButton(item: Item) {
+    const { soldier, taskCount, isAssignedToSelected, restHours, status, isConcurrent, hoursToday } = item
     const isHome = status.label === 'בית'
+    // If no task is selected → clicking opens the soldier modal
+    const handleClick = () => {
+      if (!selectedTaskId) {
+        setSoldierModalId(soldier.id)
+        return
+      }
+      if (!isHome) assign(soldier.id)
+    }
+    const disabled = selectedTaskId ? (isAssignedToSelected || isHome) : false
     return (
       <button key={soldier.id} type="button"
-        onClick={() => !isHome && assign(soldier.id)}
-        disabled={!selectedTaskId || isAssignedToSelected || isHome}
+        onClick={handleClick}
+        disabled={disabled}
         className={`w-full flex flex-col items-stretch gap-1 px-2 py-1.5 rounded-lg border transition text-sm ${
           isAssignedToSelected ? 'bg-blue-50 border-blue-300 text-blue-700' :
           isHome ? 'bg-slate-50 border-slate-100 text-slate-400 cursor-default opacity-60' :
-          !selectedTaskId ? 'bg-slate-50 border-slate-100 cursor-default' :
+          isConcurrent ? 'bg-red-50 border-red-300' :
+          !selectedTaskId ? 'bg-slate-50 border-slate-100 hover:bg-slate-100 cursor-pointer' :
           'bg-slate-50 border-slate-200 hover:border-navy hover:bg-white'
-        }`}>
-        {/* Row 1: full name (uses entire width) */}
+        }`}
+        title={isConcurrent ? '⚠ משובץ במקביל למשימה אחרת' : !selectedTaskId ? 'לחץ לראות שיבוצים' : undefined}>
+        {/* Row 1: full name (entire width) — RED line-through if concurrent */}
         <div className="flex items-center gap-1 text-right">
           {soldier.is_commander && <span className="text-navy text-xs shrink-0">★</span>}
-          <span className="font-medium truncate flex-1 text-right">{soldier.full_name}</span>
+          <span className={`font-medium truncate flex-1 text-right ${isConcurrent ? 'line-through decoration-red-500 decoration-2 text-red-700' : ''}`}>
+            {soldier.full_name}
+          </span>
         </div>
         {/* Row 2: status + counters */}
         <div className="flex items-center gap-1 text-[10px] justify-end flex-wrap">
-          {restHours !== null && restHours < 8 && (
-            <span className="text-orange-600 font-semibold">{restHours.toFixed(0)}ש׳</span>
+          {hoursToday > 0 && (
+            <span className="font-semibold px-1 py-0.5 rounded text-purple-700 bg-purple-50" title="שעות שכבר שובצו לו היום">
+              {hoursToday}ש׳ היום
+            </span>
           )}
-          {isConcurrent && (
-            <span className="font-semibold px-1 py-0.5 rounded-full text-orange-700 bg-orange-50">ב.ז</span>
+          {restHours !== null && restHours < 8 && (
+            <span className="text-orange-600 font-semibold">מנוחה {restHours.toFixed(0)}ש׳</span>
           )}
           <span className={`font-semibold px-1.5 py-0.5 rounded-full ${status.color}`}>
             {status.label}
           </span>
-          <span className="text-slate-400">{taskCount}✓</span>
+          <span className="text-slate-400">סה״כ {taskCount}</span>
         </div>
       </button>
     )
@@ -182,7 +226,9 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
           </div>
         </div>
       ) : (
-        <div className="text-xs font-bold text-slate-400 text-center py-2">בחר משימה לשיבוץ</div>
+        <div className="text-xs font-bold text-slate-500 text-center py-2">
+          לחץ על משימה לשיבוץ או על חייל לראות את שיבוציו
+        </div>
       )}
 
       {/* Soldiers list - split into sections when task requires commander */}
@@ -192,9 +238,7 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
             {/* Commander section */}
             <div>
               <div className="text-[10px] font-bold text-navy uppercase tracking-wide mb-1 px-1 flex items-center gap-1">
-                <span>★</span>
-                <span>מפקד</span>
-                <span className="text-slate-400 normal-case font-normal">— הצג קודם מפקדים</span>
+                <span>★</span><span>מפקד</span>
               </div>
               <div className="grid grid-cols-2 gap-1">
                 {commanderList.map(item => renderSoldierButton(item))}
@@ -205,9 +249,7 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
 
             {/* Soldier section */}
             <div>
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1 px-1">
-                לוחמים — הצג קודם לוחמים
-              </div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1 px-1">לוחמים</div>
               <div className="grid grid-cols-2 gap-1">
                 {soldierList.map(item => renderSoldierButton(item))}
               </div>
@@ -220,6 +262,59 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
           </div>
         )}
       </div>
+
+      {/* Modal: soldier's assignments + leave */}
+      {modalSoldier && (
+        <>
+          <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setSoldierModalId(null)} />
+          <div className="fixed top-10 left-1/2 -translate-x-1/2 bg-white rounded-2xl shadow-2xl z-50 w-[28rem] max-w-[90vw] max-h-[80vh] overflow-y-auto p-5" dir="rtl">
+            <div className="flex justify-between items-start mb-3">
+              <div>
+                <h3 className="text-lg font-bold text-navy flex items-center gap-1">
+                  {modalSoldier.is_commander && <span>★</span>}
+                  {modalSoldier.full_name}
+                </h3>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  סה״כ {modalAssignments.length} משימות • {modalLeaveDays.length} ימי בית
+                </div>
+              </div>
+              <button onClick={() => setSoldierModalId(null)} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
+            </div>
+
+            {modalAssignments.length === 0 && modalLeaveDays.length === 0 && (
+              <p className="text-sm text-slate-400 text-center py-6">אין שיבוצים או ימי בית בשבצ״ק זה</p>
+            )}
+
+            {modalAssignments.length > 0 && (
+              <div className="mb-4">
+                <div className="text-xs font-bold text-slate-500 mb-2">שיבוצים:</div>
+                <div className="flex flex-col gap-1">
+                  {modalAssignments.map(({ task }) => (
+                    <div key={task.id} className="flex items-center gap-2 text-xs bg-slate-50 rounded-lg px-2 py-1.5 border border-slate-100">
+                      <span className="font-bold text-slate-700 flex-1">{task.task_type}</span>
+                      <span className="text-slate-500">{fmtDay(isoDate(task.start_datetime))}</span>
+                      <span className="font-mono text-slate-600">{fmtHourRange(task)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {modalLeaveDays.length > 0 && (
+              <div>
+                <div className="text-xs font-bold text-slate-500 mb-2">ימי בית:</div>
+                <div className="flex flex-wrap gap-1">
+                  {modalLeaveDays.map(d => (
+                    <span key={d} className="text-xs bg-blue-50 text-blue-700 rounded-full px-2 py-0.5 font-semibold">
+                      🏠 {fmtDay(d)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
