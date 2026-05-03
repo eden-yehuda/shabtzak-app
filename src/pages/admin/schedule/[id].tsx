@@ -602,6 +602,26 @@ export default function EditSchedule() {
                   const a = assignments.find(a => a.task_id === taskId && a.soldier_id === soldierId)
                   if (a) { await deleteAssignment(a.id); await touchSchedule() }
                 }}
+                onEditAssignmentNote={async (taskId, soldierId, currentNote) => {
+                  const a = assignments.find(a => a.task_id === taskId && a.soldier_id === soldierId)
+                  if (!a) return
+                  const newNote = window.prompt('הערה לשיבוץ (השאר ריק כדי למחוק):', currentNote ?? '')
+                  if (newNote === null) return // user cancelled
+                  const trimmed = newNote.trim()
+                  const oldNote = a.note ?? ''
+                  if (trimmed === oldNote) return
+                  try {
+                    await updateAssignment(a.id, trimmed ? { note: trimmed } : { note: '' })
+                    await touchSchedule()
+                    pushUndo({
+                      label: 'עריכת הערה',
+                      undo: async () => {
+                        await updateAssignment(a.id, { note: oldNote })
+                        await touchSchedule()
+                      },
+                    })
+                  } catch { alert('עריכת הערה נכשלה') }
+                }}
                 onDeleteTask={handleDeleteTask}
                 onMoveTaskToSlot={handleMoveTaskToSlot}
                 onCreateTaskAtSlot={handleCreateTaskAtSlot}

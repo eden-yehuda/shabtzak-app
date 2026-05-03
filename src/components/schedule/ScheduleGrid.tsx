@@ -14,6 +14,7 @@ interface Props {
   homeLeaveHour?: number  // when soldiers swap (depart/return); defaults to dayStartHour
   onSelectTask?: (taskId: string) => void
   onRemoveSoldier?: (taskId: string, soldierId: string) => void
+  onEditAssignmentNote?: (taskId: string, soldierId: string, currentNote: string) => void
   onMoveTask?: (taskId: string, hourDelta: number) => void
   onResizeTask?: (taskId: string, endHourDelta: number) => void
   onDeleteTask?: (taskId: string) => void
@@ -69,7 +70,7 @@ function addDays(dateStr: string, n: number): string {
 
 export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
-  currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, onSelectTask, onRemoveSoldier,
+  currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, onSelectTask, onRemoveSoldier, onEditAssignmentNote,
   onMoveTask, onResizeTask, onDeleteTask, onMoveTaskToSlot, onCreateTaskAtSlot,
   onPairSoldiers, onUnpairSoldier, onDeleteColumn,
 }: Props) {
@@ -611,6 +612,15 @@ export default function ScheduleGrid({
                                                 )}
                                               </span>
                                             ))}
+                                            {builderMode && onEditAssignmentNote && (
+                                              <button
+                                                onClick={e => { e.stopPropagation(); onEditAssignmentNote(task.id, row[0].id, row[0].note ?? '') }}
+                                                title={row[0].note ? `הערה: ${row[0].note} (לחץ לעריכה)` : 'הוסף הערה'}
+                                                className="opacity-40 hover:opacity-100 hover:text-navy text-[10px] leading-none"
+                                              >
+                                                ✎
+                                              </button>
+                                            )}
                                             {builderMode && onRemoveSoldier && (
                                               <button
                                                 onClick={e => { e.stopPropagation(); onRemoveSoldier(task.id, row[0].id) }}
