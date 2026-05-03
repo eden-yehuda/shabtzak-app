@@ -10,6 +10,7 @@ interface Props {
   tasks: Task[]
   finalLeave: LeaveRequest[]
   selectedTaskId: string | null
+  homeLeaveHour?: number  // hour when soldiers swap (default 2 — same as DAY_START)
   onAssigned?: (taskId: string, soldierId: string) => Promise<void>
 }
 
@@ -34,25 +35,52 @@ function fmtDay(dateStr: string): string {
   return `${days[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
 }
 
-function getSoldierStatus(soldier: Soldier, taskDate: string | null, finalLeave: LeaveRequest[]): { label: string; color: string } {
-  if (!taskDate) return { label: 'נמצא', color: 'text-green-700 bg-green-50' }
-  const isHome = finalLeave.some(r => r.soldier_id === soldier.id && r.date === taskDate && r.status === 'approved')
-  const wasHome = finalLeave.some(r => r.soldier_id === soldier.id && r.date === addDays(taskDate, -1) && r.status === 'approved')
-  if (isHome) return { label: 'בית', color: 'text-blue-700 bg-blue-50' }
-  if (wasHome && !isHome) return { label: 'חוזר', color: 'text-teal-700 bg-teal-50' }
-  return { label: 'נמצא', color: 'text-green-700 bg-green-50' }
+// More granular status: distinguishes "leaving today" / "staying home" / "returning today" / "present"
+type HomeStatus = 'present' | 'leavingToday' | 'stayingHome' | 'returningToday'
+interface StatusInfo { label: string; color: string; key: HomeStatus }
+
+function getSoldierStatus(soldier: Soldier, taskDate: string | null, finalLeave: LeaveRequest[]): StatusInfo {
+  if (!taskDate) return { label: 'נמצא', color: 'text-green-700 bg-green-50', key: 'present' }
+  const isHomeToday = finalLeave.some(r => r.soldier_id === soldier.id && r.date === taskDate && r.status === 'approved')
+  const wasHomeYesterday = finalLeave.some(r => r.soldier_id === soldier.id && r.date === addDays(taskDate, -1) && r.status === 'approved')
+  if (isHomeToday && wasHomeYesterday) return { label: 'בבית', color: 'text-blue-700 bg-blue-50', key: 'stayingHome' }
+  if (isHomeToday && !wasHomeYesterday) return { label: 'יוצא', color: 'text-amber-700 bg-amber-50', key: 'leavingToday' }
+  if (!isHomeToday && wasHomeYesterday) return { label: 'חוזר', color: 'text-teal-700 bg-teal-50', key: 'returningToday' }
+  return { label: 'נמצא', color: 'text-green-700 bg-green-50', key: 'present' }
 }
 
 // Availability rank — lower = more preferred for assignment
-function availabilityRank(item: { status: { label: string }; hoursToday: number }): number {
-  if (item.status.label === 'בית') return 5
-  if (item.status.label === 'יוצא') return 4
-  if (item.status.label === 'חוזר') return 3
+function availabilityRank(item: { status: StatusInfo; hoursToday: number }): number {
+  if (item.status.key === 'stayingHome') return 5
+  if (item.status.key === 'leavingToday') return 4
+  if (item.status.key === 'returningToday') return 3
   if (item.hoursToday > 0) return 2 // available but already has tasks today
   return 1 // best: fully available, no tasks today
 }
 
-export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave, selectedTaskId, onAssigned }: Props) {
+// Decide whether soldier (with given status) can be assigned to the selected task,
+// based on the task's time vs the home-leave swap hour.
+function canAssignByLeaveStatus(status: HomeStatus, task: Task | null, homeLeaveHour: number): boolean {
+  if (!task) return true // no task selected → no constraint here
+  if (status === 'present') return true
+  if (status === 'stayingHome') return false // fully home both days — never assignable
+  // leavingToday: available BEFORE swap hour → task must END by homeLeaveHour
+  if (status === 'leavingToday') {
+    const endH = task.end_datetime.getHours()
+    const endDay = isoDate(task.end_datetime)
+    const startDay = isoDate(task.start_datetime)
+    // task ends same day at or before the swap hour
+    return endDay === startDay && endH <= homeLeaveHour
+  }
+  // returningToday: available AFTER swap hour → task must START at/after homeLeaveHour
+  if (status === 'returningToday') {
+    const startH = task.start_datetime.getHours()
+    return startH >= homeLeaveHour
+  }
+  return false
+}
+
+export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave, selectedTaskId, homeLeaveHour = 2, onAssigned }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [soldierModalId, setSoldierModalId] = useState<string | null>(null)
 
@@ -170,28 +198,34 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
 
   function renderSoldierButton(item: Item) {
     const { soldier, taskCount, isAssignedToSelected, restHours, status, isConcurrent, hoursToday } = item
-    const isHome = status.label === 'בית'
+    // Can this soldier be assigned to the selected task, accounting for partial-day availability?
+    const canAssignByLeave = canAssignByLeaveStatus(status.key, selectedTask, homeLeaveHour)
+    const blocked = !canAssignByLeave
     // If no task is selected → clicking opens the soldier modal
     const handleClick = () => {
       if (!selectedTaskId) {
         setSoldierModalId(soldier.id)
         return
       }
-      if (!isHome) assign(soldier.id)
+      if (!blocked) assign(soldier.id)
     }
-    const disabled = selectedTaskId ? (isAssignedToSelected || isHome) : false
+    const disabled = selectedTaskId ? (isAssignedToSelected || blocked) : false
     return (
       <button key={soldier.id} type="button"
         onClick={handleClick}
         disabled={disabled}
         className={`w-full flex flex-col items-stretch gap-1 px-2 py-1.5 rounded-lg border transition text-sm ${
           isAssignedToSelected ? 'bg-blue-50 border-blue-300 text-blue-700' :
-          isHome ? 'bg-slate-50 border-slate-100 text-slate-400 cursor-default opacity-60' :
+          blocked ? 'bg-slate-50 border-slate-100 text-slate-400 cursor-default opacity-60' :
           isConcurrent ? 'bg-red-50 border-red-300' :
           !selectedTaskId ? 'bg-slate-50 border-slate-100 hover:bg-slate-100 cursor-pointer' :
           'bg-slate-50 border-slate-200 hover:border-navy hover:bg-white'
         }`}
-        title={isConcurrent ? '⚠ משובץ במקביל למשימה אחרת' : !selectedTaskId ? 'לחץ לראות שיבוצים' : undefined}>
+        title={
+          blocked ? `לא זמין למשימה זו (${status.label})` :
+          isConcurrent ? '⚠ משובץ במקביל למשימה אחרת' :
+          !selectedTaskId ? 'לחץ לראות שיבוצים' : undefined
+        }>
         {/* Row 1: full name (entire width) — RED line-through if concurrent */}
         <div className="flex items-center gap-1 text-right">
           {soldier.is_commander && <span className="text-navy text-xs shrink-0">★</span>}

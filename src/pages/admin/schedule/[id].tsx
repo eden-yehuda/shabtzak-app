@@ -252,11 +252,11 @@ export default function EditSchedule() {
   const warnCount = validationErrors.filter(e => e.type === 'warning').length
 
   // Auto-unpublish when any edit is made — soldiers won't see mid-edit state
+  // Edits only update the working copy + updated_at marker. The published snapshot
+  // and the schedule.status remain untouched until the user explicitly publishes/unpublishes.
   async function touchSchedule() {
     if (!scheduleId) return
-    const update: Record<string, unknown> = { updated_at: serverTimestamp() }
-    if (schedule?.status === 'published') update.status = 'draft'
-    await updateDoc(doc(db, 'schedules', scheduleId), update)
+    await updateDoc(doc(db, 'schedules', scheduleId), { updated_at: serverTimestamp() })
   }
 
   async function handleMoveTask(taskId: string, hourDelta: number) {
@@ -657,6 +657,7 @@ export default function EditSchedule() {
             tasks={tasks}
             finalLeave={finalLeave}
             selectedTaskId={selectedTaskId}
+            homeLeaveHour={schedule?.home_leave_hour ?? schedule?.day_start_hour ?? 2}
             onAssigned={async (taskId: string, soldierId: string) => {
               await touchSchedule()
               await handleAssigned(taskId, soldierId)
