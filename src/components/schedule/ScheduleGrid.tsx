@@ -272,7 +272,17 @@ export default function ScheduleGrid({
           .map(t => t.task_type)
         )
         const dayTypeSet = new Set([...dayTasks.map(t => t.task_type), ...Array.from(overflowTypes)])
-        const columns = allColumns.filter(c => dayTypeSet.has(c))
+        let columns = allColumns.filter(c => dayTypeSet.has(c))
+        // Per-day reorder: from שלישי 5/5/2026 onwards, swap כ"כ ב ↔ כ"כ ג
+        if (day >= '2026-05-05') {
+          const idxB = columns.indexOf('כ"כ ב')
+          const idxG = columns.indexOf('כ"כ ג')
+          if (idxB !== -1 && idxG !== -1) {
+            const swapped = [...columns]
+            ;[swapped[idxB], swapped[idxG]] = [swapped[idxG], swapped[idxB]]
+            columns = swapped
+          }
+        }
 
         // Build per-column task lookup
         // taskAtRow[col][rowIndex] = task that STARTS at that row
