@@ -88,13 +88,10 @@ export default function EditSchedule() {
   }>>([])
   useEffect(() => {
     if (!scheduleId) return
-    const q = query(
-      publishedVersionsRef(),
-      where('schedule_id', '==', scheduleId),
-      orderBy('published_at', 'desc')
-    )
+    // No orderBy — would require a composite index. Sort client-side.
+    const q = query(publishedVersionsRef(), where('schedule_id', '==', scheduleId))
     return onSnapshot(q, snap => {
-      setPublishedVersions(snap.docs.map(d => {
+      const list = snap.docs.map(d => {
         const data = d.data()
         return {
           id: d.id,
@@ -103,7 +100,9 @@ export default function EditSchedule() {
           task_count: Array.isArray(data.tasks) ? data.tasks.length : 0,
           assignment_count: Array.isArray(data.assignments) ? data.assignments.length : 0,
         }
-      }))
+      })
+      list.sort((a, b) => b.published_at.getTime() - a.published_at.getTime())
+      setPublishedVersions(list)
     })
   }, [scheduleId])
 

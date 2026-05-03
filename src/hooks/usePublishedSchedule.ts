@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
-import { onSnapshot, query, where, orderBy, limit } from 'firebase/firestore'
+import { onSnapshot, query, where } from 'firebase/firestore'
 import { publishedVersionsRef } from '@/lib/firestore'
 import type { Task, Assignment } from '@/types'
 
 /**
  * Returns the LATEST published snapshot (tasks + assignments) for a schedule.
  * Soldier-facing pages use this — never the live working copy in `tasks`/`assignments`.
+ *
+ * NOTE: We avoid `orderBy` in the Firestore query (would require a composite index).
+ * Instead we fetch all snapshots for this schedule and pick the latest client-side.
  */
 export function usePublishedSchedule(scheduleId: string | null) {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -20,12 +23,7 @@ export function usePublishedSchedule(scheduleId: string | null) {
       return
     }
     setLoading(true)
-    const q = query(
-      publishedVersionsRef(),
-      where('schedule_id', '==', scheduleId),
-      orderBy('published_at', 'desc'),
-      limit(1)
-    )
+    const q = query(publishedVersionsRef(), where('schedule_id', '==', scheduleId))
     return onSnapshot(q, snap => {
       if (snap.empty) {
         setTasks([])
@@ -33,7 +31,13 @@ export function usePublishedSchedule(scheduleId: string | null) {
         setLoading(false)
         return
       }
-      const data = snap.docs[0].data()
+      // Pick the latest snapshot client-side (sort by published_at desc)
+      const sorted = [...snap.docs].sort((a, b) => {
+        const ta = a.data().published_at?.toMillis?.() ?? 0
+        const tb = b.data().published_at?.toMillis?.() ?? 0
+        return tb - ta
+      })
+      const data = sorted[0].data()
       const ts: Task[] = (data.tasks ?? []).map((t: Record<string, unknown>) => ({
         id: t.id as string,
         schedule_id: scheduleId,
