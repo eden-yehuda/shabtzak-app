@@ -56,6 +56,7 @@ export function usePublishedSchedule(scheduleId: string | null) {
         order: (a.order as number) ?? 1,
         ...(a.alternating_group ? { alternating_group: a.alternating_group as number } : {}),
         ...(a.note ? { note: a.note as string } : {}),
+        ...(a.is_acting_commander ? { is_acting_commander: true } : {}),
       } as Assignment))
       setTasks(ts)
       setAssignments(as)
