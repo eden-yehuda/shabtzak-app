@@ -381,22 +381,32 @@ function AllLeavesModal({ soldiers, finalLeave, onClose }: {
 
         <div className="overflow-auto p-4 flex-1">
           {selectedSoldier ? (
-            // Single-soldier view: each day = a row (mobile-friendly)
+            // Single-soldier view: one card per day (mobile-friendly)
             (() => {
-              const myLeaves = dates.filter(d => onLeave.has(`${selectedSoldier.id}|${d}`))
-              if (myLeaves.length === 0) {
-                return <p className="text-slate-400 text-center py-8">אין יציאות מאושרות מהיום והלאה עבור {selectedSoldier.full_name}</p>
-              }
+              const homeCount = dates.filter(d => onLeave.has(`${selectedSoldier.id}|${d}`)).length
               return (
                 <div className="flex flex-col gap-1.5 max-w-md mx-auto">
-                  {myLeaves.map(d => (
-                    <div key={d}
-                      className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-                      <span className="font-semibold text-blue-800">🏠 {dayLong(d)}</span>
-                      <span className="text-xs text-blue-600">בית</span>
-                    </div>
-                  ))}
-                  <div className="text-center text-xs text-slate-500 mt-2">סה״כ {myLeaves.length} ימים</div>
+                  {dates.map(d => {
+                    const isHome = onLeave.has(`${selectedSoldier.id}|${d}`)
+                    return (
+                      <div key={d}
+                        className={`flex items-center justify-between rounded-xl px-4 py-3 border ${
+                          isHome
+                            ? 'bg-blue-50 border-blue-200'
+                            : 'bg-emerald-50 border-emerald-200'
+                        }`}>
+                        <span className={`font-semibold ${isHome ? 'text-blue-800' : 'text-emerald-800'}`}>
+                          {isHome ? '🏠' : '✅'} {dayLong(d)}
+                        </span>
+                        <span className={`text-xs ${isHome ? 'text-blue-600' : 'text-emerald-600'}`}>
+                          {isHome ? 'בית' : 'נמצא'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                  <div className="text-center text-xs text-slate-500 mt-2">
+                    {homeCount} ימי בית מתוך {dates.length} ימים
+                  </div>
                 </div>
               )
             })()
