@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import AdminLayout from '@/components/layout/AdminLayout'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useLeaveRequests } from '@/hooks/useLeaveRequests'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
-import { addDoc, deleteDoc, doc, updateDoc, setDoc, onSnapshot, getDocs, query, where } from 'firebase/firestore'
-import { leaveRequestsRef } from '@/lib/firestore'
+import { addDoc, deleteDoc, doc, updateDoc, setDoc, onSnapshot, getDocs, query, where, Timestamp, writeBatch, serverTimestamp } from 'firebase/firestore'
+import { leaveRequestsRef, leaveVersionsRef } from '@/lib/firestore'
 import { db } from '@/lib/firebase'
 import { matchSoldierName } from '@/utils/sheetParser'
 import type { Soldier } from '@/types'
@@ -62,6 +62,130 @@ export default function AdminLeavePage() {
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
 
+  // ── Undo stack (last 20 ops) + Ctrl+Z ────────────────────────────────────
+  type UndoAction = { label: string; undo: () => Promise<void> }
+  const [undoStack, setUndoStack] = useState<UndoAction[]>([])
+  const pushUndo = useCallback((action: UndoAction) => {
+    setUndoStack(prev => [...prev.slice(-19), action])
+  }, [])
+  const performUndo = useCallback(async () => {
+    setUndoStack(prev => {
+      if (prev.length === 0) return prev
+      const last = prev[prev.length - 1]
+      last.undo().catch(e => { console.error(e); alert('ביטול נכשל: ' + (e as Error).message) })
+      return prev.slice(0, -1)
+    })
+  }, [])
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        performUndo()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [performUndo])
+
+  // ── Versions ──────────────────────────────────────────────────────────────
+  type LeaveVersion = {
+    id: string
+    saved_at: Date
+    saved_by: string
+    label: string
+    record_count: number
+  }
+  const [versions, setVersions] = useState<LeaveVersion[]>([])
+  const [showVersionsPanel, setShowVersionsPanel] = useState(false)
+  const [savingVersion, setSavingVersion] = useState(false)
+
+  useEffect(() => {
+    return onSnapshot(leaveVersionsRef(), snap => {
+      const list: LeaveVersion[] = snap.docs.map(d => {
+        const data = d.data()
+        return {
+          id: d.id,
+          saved_at: data.saved_at?.toDate?.() ?? new Date(),
+          saved_by: data.saved_by ?? 'משתמש לא ידוע',
+          label: data.label ?? '',
+          record_count: Array.isArray(data.leave_requests) ? data.leave_requests.length : 0,
+        }
+      })
+      list.sort((a, b) => b.saved_at.getTime() - a.saved_at.getTime())
+      setVersions(list)
+    })
+  }, [])
+
+  async function snapshotCurrentLeave(label: string) {
+    const snap = await getDocs(leaveRequestsRef())
+    const records = snap.docs.map(d => {
+      const data = d.data() as Record<string, unknown>
+      return {
+        id: d.id,
+        soldier_id: data.soldier_id,
+        date: data.date,
+        status: data.status,
+        is_final: data.is_final ?? false,
+        note: data.note ?? '',
+        reviewed_by: data.reviewed_by ?? '',
+      }
+    })
+    await addDoc(leaveVersionsRef(), {
+      saved_at: serverTimestamp(),
+      saved_by: typeof window !== 'undefined' ? (localStorage.getItem('admin_name') ?? 'מנהל') : 'מנהל',
+      label,
+      leave_requests: records,
+    })
+  }
+
+  async function saveManualVersion() {
+    if (savingVersion) return
+    const label = window.prompt('שם לגרסה (אופציונלי):', `שמור ידני ${new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' })}`)
+    if (label === null) return
+    setSavingVersion(true)
+    try {
+      await snapshotCurrentLeave(label.trim() || 'ללא שם')
+      alert('✓ גרסה נשמרה')
+    } catch (e) { alert('שמירת גרסה נכשלה: ' + (e as Error).message) }
+    finally { setSavingVersion(false) }
+  }
+
+  async function restoreVersion(versionId: string) {
+    if (!confirm('שחזור גרסה ימחק את כל היציאות הנוכחיות ויחליף אותן בגרסה זו. להמשיך?')) return
+    try {
+      // Auto-snapshot current state first (so the restore itself can be undone via versions list)
+      await snapshotCurrentLeave('שמור אוטומטית לפני שחזור')
+
+      // Load the target version
+      const verSnap = await getDocs(leaveVersionsRef())
+      const verDoc = verSnap.docs.find(d => d.id === versionId)
+      if (!verDoc) { alert('גרסה לא נמצאה'); return }
+      const verData = verDoc.data()
+      const records = (verData.leave_requests ?? []) as Array<Record<string, unknown>>
+
+      // Delete all current leave_requests
+      const allSnap = await getDocs(leaveRequestsRef())
+      const batch1 = writeBatch(db)
+      allSnap.docs.forEach(d => batch1.delete(d.ref))
+      await batch1.commit()
+
+      // Re-create from the snapshot
+      for (const r of records) {
+        await addDoc(leaveRequestsRef(), {
+          soldier_id: r.soldier_id,
+          date: r.date,
+          status: r.status,
+          is_final: r.is_final ?? false,
+          note: r.note ?? '',
+          reviewed_by: r.reviewed_by ?? '',
+          created_at: Timestamp.now(),
+        })
+      }
+      alert('✓ הגרסה שוחזרה בהצלחה')
+    } catch (e) { alert('שחזור נכשל: ' + (e as Error).message) }
+  }
+
+
   useEffect(() => {
     return onSnapshot(doc(db, 'settings', 'leave_survey'), snap => {
       if (snap.exists()) setSurvey(snap.data() as SurveySettings)
@@ -78,11 +202,40 @@ export default function AdminLeavePage() {
     await setDoc(doc(db, 'settings', 'leave_survey'), { is_open: false, from: survey?.from ?? '', to: survey?.to ?? '', max_days: survey?.max_days ?? 3 })
   }
 
-  // Dates to display: survey range if open, otherwise next 14 days
+  // Date pagination: 14-day windows. Default anchor = first day of survey (or today).
+  // The V on each cell is bound to (soldier_id, ISO date) — independent of which window is shown.
+  const [windowStart, setWindowStart] = useState<string>('') // YYYY-MM-DD; '' → use default
+  const WINDOW_DAYS = 14
+
+  function isoDateLocal(d: Date) {
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
+  }
+  function shiftDate(iso: string, deltaDays: number): string {
+    const d = new Date(iso + 'T12:00:00')
+    d.setDate(d.getDate() + deltaDays)
+    return isoDateLocal(d)
+  }
+
+  // Compute the actual start of the visible window
+  const effectiveWindowStart = useMemo(() => {
+    if (windowStart) return windowStart
+    if (survey?.is_open && survey.from) return survey.from
+    return isoDateLocal(new Date())
+  }, [windowStart, survey])
+
   const dates = useMemo(() => {
-    if (survey?.is_open && survey.from && survey.to) return daysInRange(survey.from, survey.to)
-    return next14Days()
-  }, [survey])
+    const out: string[] = []
+    let d = effectiveWindowStart
+    for (let i = 0; i < WINDOW_DAYS; i++) {
+      out.push(d)
+      d = shiftDate(d, 1)
+    }
+    return out
+  }, [effectiveWindowStart])
+
+  function pagePrev() { setWindowStart(shiftDate(effectiveWindowStart, -WINDOW_DAYS)) }
+  function pageNext() { setWindowStart(shiftDate(effectiveWindowStart, WINDOW_DAYS)) }
+  function pageToday() { setWindowStart('') }
 
   const sorted = useMemo(() =>
     [...soldiers].filter(s => s.is_active).sort((a, b) => a.full_name.localeCompare(b.full_name, 'he')),
@@ -95,20 +248,45 @@ export default function AdminLeavePage() {
   async function toggleFinal(soldier: Soldier, date: string) {
     const approved = finalLeave.find(r => r.soldier_id === soldier.id && r.date === date)
     if (approved) {
+      // Snapshot the data needed to undo this delete
+      const data = {
+        soldier_id: approved.soldier_id, date: approved.date,
+        status: approved.status, is_final: approved.is_final,
+        note: approved.note ?? '', reviewed_by: (approved as { reviewed_by?: string }).reviewed_by ?? '',
+      }
       await deleteDoc(doc(db, 'leave_requests', approved.id))
+      pushUndo({
+        label: `הסרת יציאה (${soldier.full_name} ${date})`,
+        undo: async () => {
+          await addDoc(leaveRequestsRef(), { ...data, created_at: Timestamp.now() })
+        },
+      })
       return
     }
     // If there's a pending request, approve it in-place
     const pending = soldierRequests.find(r => r.soldier_id === soldier.id && r.date === date && r.status === 'pending')
     if (pending) {
+      const wasStatus = pending.status, wasFinal = pending.is_final
       await updateDoc(doc(db, 'leave_requests', pending.id), { is_final: true, status: 'approved' })
+      pushUndo({
+        label: `אישור בקשה (${soldier.full_name} ${date})`,
+        undo: async () => {
+          await updateDoc(doc(db, 'leave_requests', pending.id), { is_final: wasFinal, status: wasStatus })
+        },
+      })
     } else {
-      await addDoc(leaveRequestsRef(), {
+      const newDoc = await addDoc(leaveRequestsRef(), {
         soldier_id: soldier.id,
         date,
         status: 'approved',
         is_final: true,
         created_at: new Date(),
+      })
+      pushUndo({
+        label: `הוספת יציאה (${soldier.full_name} ${date})`,
+        undo: async () => {
+          await deleteDoc(doc(db, 'leave_requests', newDoc.id))
+        },
       })
     }
   }
@@ -135,6 +313,10 @@ export default function AdminLeavePage() {
     setSyncing(true)
     setSyncResult(null)
     try {
+      // Auto-save a version BEFORE applying changes from the sheet
+      try { await snapshotCurrentLeave('שמור אוטומטית לפני סנכרון מגיליון') }
+      catch (snapshotErr) { console.warn('Snapshot before sync failed:', snapshotErr) }
+
       const res = await fetch('/.netlify/functions/fetch-leave-sheet')
       const data = await res.json()
       if (data.error) { alert(`שגיאה: ${data.error}`); return }
@@ -233,14 +415,74 @@ export default function AdminLeavePage() {
     <AdminLayout>
       <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
         <h1 className="text-xl font-bold text-navy">ניהול יציאות</h1>
-        <button
-          onClick={syncFromSheet}
-          disabled={syncing}
-          className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-40"
-        >
-          {syncing ? '⏳ מסנכרן...' : '📊 סנכרון יציאות'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={performUndo} disabled={undoStack.length === 0}
+            title={undoStack.length > 0 ? `ביטול: ${undoStack[undoStack.length - 1].label} (Ctrl+Z)` : 'אין פעולה לביטול'}
+            className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-30 disabled:cursor-not-allowed">
+            ↶ ביטול {undoStack.length > 0 && `(${undoStack.length})`}
+          </button>
+
+          <button onClick={() => setShowVersionsPanel(true)} disabled={versions.length === 0}
+            title={versions.length > 0 ? `${versions.length} גרסאות שמורות` : 'אין גרסאות שמורות'}
+            className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-30 disabled:cursor-not-allowed">
+            🕒 גרסאות {versions.length > 0 && `(${versions.length})`}
+          </button>
+
+          <button onClick={saveManualVersion} disabled={savingVersion}
+            className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-40">
+            {savingVersion ? '⏳ שומר...' : '💾 שמור גרסה'}
+          </button>
+
+          <button
+            onClick={syncFromSheet}
+            disabled={syncing}
+            className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-40"
+          >
+            {syncing ? '⏳ מסנכרן...' : '📊 סנכרון יציאות'}
+          </button>
+        </div>
       </div>
+
+      {/* Side drawer: leave version history */}
+      {showVersionsPanel && (
+        <>
+          <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setShowVersionsPanel(false)} />
+          <div className="fixed top-0 left-0 h-full w-[28rem] max-w-[90vw] bg-white shadow-2xl z-50 overflow-y-auto" dir="rtl">
+            <div className="sticky top-0 bg-white border-b border-slate-200 px-4 py-3 flex justify-between items-center">
+              <div className="font-bold text-slate-800">🕒 היסטוריית גרסאות יציאות</div>
+              <button onClick={() => setShowVersionsPanel(false)}
+                className="text-slate-400 hover:text-slate-700 text-xl leading-none px-2">×</button>
+            </div>
+            <div className="p-4 flex flex-col gap-2">
+              {versions.length === 0
+                ? <p className="text-sm text-slate-400 text-center py-8">אין גרסאות שמורות עדיין</p>
+                : versions.map((v, i) => (
+                  <div key={v.id} className={`rounded-lg border p-3 ${i === 0 ? 'bg-blue-50 border-blue-300' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <div className="font-semibold text-slate-800 text-sm">
+                          {i === 0 && <span className="text-blue-700">▶ אחרון — </span>}
+                          {v.label || `גרסה #${versions.length - i}`}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          {v.saved_at.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', dateStyle: 'short', timeStyle: 'short' })}
+                        </div>
+                        <div className="text-[11px] text-slate-500">נשמר ע&quot;י: {v.saved_by}</div>
+                        <div className="text-[11px] text-slate-400 mt-1">
+                          {v.record_count} רשומות
+                        </div>
+                      </div>
+                      <button onClick={() => restoreVersion(v.id)}
+                        className="text-xs bg-white border border-slate-300 text-slate-700 px-3 py-1 rounded-lg hover:border-navy hover:text-navy transition shrink-0">
+                        ↶ שחזר
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Survey control */}
       <div className={`rounded-xl p-4 mb-5 border ${survey?.is_open ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-200'}`}>
@@ -320,6 +562,27 @@ export default function AdminLeavePage() {
           )}
         </div>
       )}
+
+      {/* Date pagination */}
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap" dir="rtl">
+        <div className="flex items-center gap-2">
+          <button onClick={pagePrev}
+            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm hover:border-navy hover:text-navy transition">
+            ← קודם
+          </button>
+          <button onClick={pageToday}
+            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm hover:border-navy hover:text-navy transition">
+            היום
+          </button>
+          <button onClick={pageNext}
+            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm hover:border-navy hover:text-navy transition">
+            הבא →
+          </button>
+        </div>
+        <div className="text-sm text-slate-600 font-semibold">
+          {dates[0]} ← {dates[dates.length - 1]} ({WINDOW_DAYS} ימים)
+        </div>
+      </div>
 
       {/* Legend */}
       <div className="flex gap-4 mb-4 text-xs text-slate-500 items-center flex-wrap">

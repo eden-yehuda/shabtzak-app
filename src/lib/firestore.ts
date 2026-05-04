@@ -66,6 +66,9 @@ export const updateLeaveStatus = (
 // --- Task Types ---
 export const taskTypesRef = () => collection(db, 'task_types')
 
+// --- Leave Versions (full-state snapshots of leave_requests) ---
+export const leaveVersionsRef = () => collection(db, 'leave_versions')
+
 // --- Published Versions (snapshots of published schedules) ---
 export const publishedVersionsRef = () => collection(db, 'published_versions')
 export interface PublishedVersionSnapshot {
