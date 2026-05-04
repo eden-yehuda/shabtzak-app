@@ -238,7 +238,7 @@ export default function AdminLeavePage() {
           disabled={syncing}
           className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-40"
         >
-          {syncing ? '⏳ מסנכרן...' : '📊 סנכרון מגיליון'}
+          {syncing ? '⏳ מסנכרן...' : '📊 סנכרון יציאות'}
         </button>
       </div>
 
