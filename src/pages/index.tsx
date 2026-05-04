@@ -36,6 +36,8 @@ export default function HomePage() {
   const [showInquiry, setShowInquiry] = useState(false)
   const [showLeave, setShowLeave] = useState(false)
   const [survey, setSurvey] = useState<SurveySettings | null>(null)
+  const [fullView, setFullView] = useState(false)
+  const [showAllLeaves, setShowAllLeaves] = useState(false)
 
   useEffect(() => {
     return onSnapshot(doc(db, 'settings', 'leave_survey'), snap => {
@@ -126,6 +128,21 @@ export default function HomePage() {
 
   const navActions = (
     <>
+      <button
+        onClick={() => setFullView(v => !v)}
+        title={fullView ? 'חזור לתצוגת חיילים (3 ימים)' : 'תצוגה מלאה (כל הימים, ללא עריכה)'}
+        className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition ${
+          fullView ? 'bg-white text-navy' : 'bg-white/20 hover:bg-white/30 text-white'
+        }`}
+      >
+        {fullView ? '👁 תצוגה מלאה' : '👁 שבצ"ק מלא'}
+      </button>
+      <button
+        onClick={() => setShowAllLeaves(true)}
+        className="text-xs bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg font-semibold transition"
+      >
+        🏠 יציאות
+      </button>
       {survey?.is_open && (
         <button
           onClick={() => setShowLeave(true)}
@@ -240,6 +257,7 @@ export default function HomePage() {
             myTasksOnly={myTasksOnly}
             dayStartHour={currentSchedule?.day_start_hour ?? 2}
             homeLeaveHour={currentSchedule?.home_leave_hour}
+            showAllDays={fullView}
           />
       }
 
@@ -255,7 +273,117 @@ export default function HomePage() {
           onClose={() => setShowLeave(false)}
         />
       )}
+      {showAllLeaves && (
+        <AllLeavesModal
+          soldiers={soldiers}
+          finalLeave={finalLeave}
+          onClose={() => setShowAllLeaves(false)}
+        />
+      )}
     </Layout>
+  )
+}
+
+// ── View-only modal showing ALL soldiers' approved leaves from today onward ──
+function AllLeavesModal({ soldiers, finalLeave, onClose }: {
+  soldiers: Array<{ id: string; full_name: string; is_active: boolean; is_commander: boolean }>
+  finalLeave: Array<{ soldier_id: string; date: string; status: string }>
+  onClose: () => void
+}) {
+  const today = new Date().toISOString().split('T')[0]
+
+  // Approved leaves from today onward
+  const approvedFuture = useMemo(
+    () => finalLeave.filter(r => r.status === 'approved' && r.date >= today),
+    [finalLeave, today]
+  )
+
+  // Date range: today → max date with any leave
+  const maxDate = useMemo(() => {
+    if (approvedFuture.length === 0) return today
+    return approvedFuture.reduce((mx, r) => r.date > mx ? r.date : mx, today)
+  }, [approvedFuture, today])
+
+  const dates = useMemo(() => {
+    const out: string[] = []
+    const cur = new Date(today + 'T12:00:00')
+    const end = new Date(maxDate + 'T12:00:00')
+    while (cur <= end) {
+      out.push(cur.toISOString().split('T')[0])
+      cur.setDate(cur.getDate() + 1)
+    }
+    return out
+  }, [today, maxDate])
+
+  const sortedSoldiers = useMemo(
+    () => soldiers.filter(s => s.is_active).sort((a, b) => a.full_name.localeCompare(b.full_name, 'he')),
+    [soldiers]
+  )
+
+  function dayLabel(iso: string): string {
+    const d = new Date(iso + 'T12:00:00')
+    const days = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
+    return `${days[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
+  }
+
+  // Build lookup: { 'soldierId|date' → true }
+  const onLeave = useMemo(() => {
+    const m = new Set<string>()
+    for (const r of approvedFuture) m.add(`${r.soldier_id}|${r.date}`)
+    return m
+  }, [approvedFuture])
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-2 sm:inset-10 bg-white rounded-2xl shadow-2xl z-50 flex flex-col" dir="rtl">
+        <div className="flex justify-between items-center px-4 py-3 border-b border-slate-200 shrink-0">
+          <h2 className="text-lg font-bold text-navy">🏠 יציאות הביתה ({dayLabel(today)} – {dayLabel(maxDate)})</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2">×</button>
+        </div>
+        <div className="overflow-auto p-4 flex-1">
+          {dates.length === 0 || approvedFuture.length === 0
+            ? <p className="text-slate-400 text-center py-8">אין יציאות מאושרות מהיום והלאה</p>
+            : (
+              <table className="text-sm border-collapse" style={{ minWidth: 'max-content' }}>
+                <thead>
+                  <tr className="bg-slate-50 sticky top-0 z-10">
+                    <th className="px-3 py-2 font-semibold sticky right-0 bg-slate-50 border-b border-l border-slate-200 text-right">שם</th>
+                    {dates.map(d => (
+                      <th key={d} className="px-2 py-2 text-center font-semibold border-b border-slate-200 min-w-[52px] text-xs">
+                        {dayLabel(d)}
+                      </th>
+                    ))}
+                    <th className="px-3 py-2 text-center font-semibold border-b border-slate-200 sticky left-0 bg-slate-50">סה"כ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedSoldiers.map(s => {
+                    const count = dates.filter(d => onLeave.has(`${s.id}|${d}`)).length
+                    if (count === 0) return null // skip soldiers with no future leaves to keep view focused
+                    return (
+                      <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="px-3 py-1.5 font-medium sticky right-0 bg-white whitespace-nowrap border-l border-slate-200">
+                          {s.is_commander && <span className="text-xs text-navy ml-1">★</span>}
+                          {s.full_name}
+                        </td>
+                        {dates.map(d => (
+                          <td key={d} className="px-1 py-1 text-center">
+                            {onLeave.has(`${s.id}|${d}`)
+                              ? <span className="inline-block w-7 h-7 rounded-md bg-blue-100 text-blue-700 text-xs font-bold leading-7">✓</span>
+                              : <span className="text-slate-200 text-xs">—</span>}
+                          </td>
+                        ))}
+                        <td className="px-3 py-1.5 text-center font-bold sticky left-0 bg-white border-r border-slate-200">{count}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+        </div>
+      </div>
+    </>
   )
 }
 

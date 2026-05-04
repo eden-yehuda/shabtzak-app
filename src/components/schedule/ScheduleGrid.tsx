@@ -12,6 +12,7 @@ interface Props {
   selectedTaskId?: string | null
   dayStartHour?: number
   homeLeaveHour?: number  // when soldiers swap (depart/return); defaults to dayStartHour
+  showAllDays?: boolean   // when true, skip the 4-day rolling window in soldier-facing view
   onSelectTask?: (taskId: string) => void
   onRemoveSoldier?: (taskId: string, soldierId: string) => void
   onEditAssignmentNote?: (taskId: string, soldierId: string, currentNote: string) => void
@@ -72,7 +73,7 @@ function addDays(dateStr: string, n: number): string {
 
 export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
-  currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, onSelectTask, onRemoveSoldier, onEditAssignmentNote, onToggleActingCommander,
+  currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, showAllDays, onSelectTask, onRemoveSoldier, onEditAssignmentNote, onToggleActingCommander,
   onMoveTask, onResizeTask, onDeleteTask, onMoveTaskToSlot, onCreateTaskAtSlot,
   onPairSoldiers, onUnpairSoldier, onDeleteColumn,
 }: Props) {
@@ -143,8 +144,8 @@ export default function ScheduleGrid({
     let sortedDays = Array.from(taskDays).sort()
 
     // Soldier-facing view: only show today and the next 3 calendar days (4-day window).
-    // The schedule may contain more days, but soldiers see a rolling window.
-    if (!builderMode && sortedDays.length > 0) {
+    // Skipped when showAllDays is true (admin "view full" mode) or in builderMode.
+    if (!builderMode && !showAllDays && sortedDays.length > 0) {
       const today = isoDate(new Date())
       const horizon = (() => {
         const d = new Date()
@@ -160,7 +161,7 @@ export default function ScheduleGrid({
     if (cols.length === 0) cols.push(...COLUMN_ORDER)
 
     return { days: sortedDays, allColumns: cols }
-  }, [tasks, assignments, finalLeave, myTasksOnly, currentSoldierId, builderMode])
+  }, [tasks, assignments, finalLeave, myTasksOnly, currentSoldierId, builderMode, showAllDays])
 
   // Time line: show only when nowMilitaryDay is actually in the grid.
   // If we're before the schedule starts (e.g. 00:31 on day 1 when schedule starts at 14:00),

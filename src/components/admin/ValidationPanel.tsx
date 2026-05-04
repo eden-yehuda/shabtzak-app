@@ -28,12 +28,14 @@ export default function ValidationPanel({ errors, dismissedKeys = [], onDismiss,
   const dismissedSet = new Set(dismissedKeys)
   const taskById = new Map(tasks.map(t => [t.id, t]))
 
-  // Split visible vs dismissed
-  const visible = errors.filter(e => !dismissedSet.has(errorKey(e)))
-  const dismissed = errors.filter(e => dismissedSet.has(errorKey(e)))
+  // Only render RED errors. Warnings are intentionally hidden.
+  const onlyErrors = errors.filter(e => e.type === 'error')
 
-  const visibleErrs = visible.filter(e => e.type === 'error')
-  const visibleWarns = visible.filter(e => e.type === 'warning')
+  // Split visible vs dismissed
+  const visible = onlyErrors.filter(e => !dismissedSet.has(errorKey(e)))
+  const dismissed = onlyErrors.filter(e => dismissedSet.has(errorKey(e)))
+
+  const visibleErrs = visible
 
   if (visible.length === 0 && dismissed.length === 0) {
     return (
@@ -70,24 +72,6 @@ export default function ValidationPanel({ errors, dismissedKeys = [], onDismiss,
         )
       })}
 
-      {visibleWarns.map(e => {
-        const k = errorKey(e)
-        const header = formatTaskHeader(e.task_id ? taskById.get(e.task_id) : undefined)
-        return (
-          <div key={`warn-${k}`} className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 text-sm text-yellow-800 flex flex-col gap-1">
-            {header && <div className="text-[11px] font-bold text-yellow-900/70 uppercase tracking-wide">{header}</div>}
-            <div className="flex gap-2 items-start justify-between">
-              <span className="flex-1">🟡 {e.message}</span>
-              {onDismiss && (
-                <button onClick={() => onDismiss(k)} title="סמן כתקין — הסתר אזהרה זו"
-                  className="text-yellow-500 hover:text-green-600 hover:bg-white px-1.5 py-0.5 rounded text-base leading-none shrink-0">
-                  ✓
-                </button>
-              )}
-            </div>
-          </div>
-        )
-      })}
 
       {dismissed.length > 0 && (
         <div className="border-t border-slate-200 pt-2 mt-3">
