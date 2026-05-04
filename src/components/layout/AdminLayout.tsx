@@ -24,6 +24,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <Link href="/" className="font-bold text-lg hover:opacity-80 transition">{'מנהל שבצ"ק'}</Link>
         <nav className="flex gap-3 text-sm flex-wrap">
           <Link href="/" className="hover:underline opacity-70">🏠 ממשק לוחמים</Link>
+          {/* Mobile-only: quick access to full schedule view */}
+          <Link href="/admin/view" className="md:hidden hover:underline bg-white/15 hover:bg-white/25 rounded px-2 py-0.5 transition">
+            👁 שבצ"ק מלא
+          </Link>
           <Link href="/admin/dashboard" className="hover:underline">דשבורד</Link>
           <Link href="/admin/soldiers" className="hover:underline">כוח אדם</Link>
           <Link href="/admin/schedule/new" className="hover:underline">{'שבצ"ק חדש'}</Link>

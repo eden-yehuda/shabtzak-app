@@ -646,7 +646,7 @@ export default function ScheduleGrid({
                                             {row.map((s, si) => (
                                               <span key={s.id} className="flex items-center gap-0.5">
                                                 {si > 0 && <span className="opacity-40 font-normal">/</span>}
-                                                {s.is_acting_commander && (
+                                                {s.is_acting_commander && builderMode && (
                                                   <span className="text-[11px] leading-none text-yellow-600" title="מפקד הכוח במשימה זו">★</span>
                                                 )}
                                                 <span>{s.full_name}</span>
