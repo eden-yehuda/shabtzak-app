@@ -15,6 +15,7 @@ interface Props {
   onSelectTask?: (taskId: string) => void
   onRemoveSoldier?: (taskId: string, soldierId: string) => void
   onEditAssignmentNote?: (taskId: string, soldierId: string, currentNote: string) => void
+  onToggleCommander?: (soldierId: string, currentValue: boolean) => void
   onMoveTask?: (taskId: string, hourDelta: number) => void
   onResizeTask?: (taskId: string, endHourDelta: number) => void
   onDeleteTask?: (taskId: string) => void
@@ -71,7 +72,7 @@ function addDays(dateStr: string, n: number): string {
 
 export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
-  currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, onSelectTask, onRemoveSoldier, onEditAssignmentNote,
+  currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, onSelectTask, onRemoveSoldier, onEditAssignmentNote, onToggleCommander,
   onMoveTask, onResizeTask, onDeleteTask, onMoveTaskToSlot, onCreateTaskAtSlot,
   onPairSoldiers, onUnpairSoldier, onDeleteColumn,
 }: Props) {
@@ -186,15 +187,19 @@ export default function ScheduleGrid({
 
   type AssignedSoldier = Soldier & { note?: string; alternating_group?: number }
 
+  // Task types where commanders should NOT be auto-promoted to first row.
+  // (כ"כ ב has its own duty rotation — assigned commanders are treated like regular soldiers.)
+  const NO_COMMANDER_PROMOTION_TYPES = new Set(['כ"כ ב'])
+
   function assignedFor(task: Task): AssignedSoldier[] {
     const result: AssignedSoldier[] = []
     for (const a of assignments.filter(a => a.task_id === task.id).sort((a, b) => (a.order ?? 99) - (b.order ?? 99))) {
       const s = soldierMap[a.soldier_id]
       if (s) result.push({ ...s, note: a.note, alternating_group: a.alternating_group })
     }
-    // If any commander is assigned, commanders always appear first
+    // Auto-promote commanders to first — unless this task type opts out
     const hasCommander = result.some(s => s.is_commander)
-    if (hasCommander) {
+    if (hasCommander && !NO_COMMANDER_PROMOTION_TYPES.has(task.task_type)) {
       result.sort((a, b) => (a.is_commander ? 0 : 1) - (b.is_commander ? 0 : 1))
     }
     return result
@@ -621,6 +626,7 @@ export default function ScheduleGrid({
                                             {row.map((s, si) => (
                                               <span key={s.id} className="flex items-center gap-0.5">
                                                 {si > 0 && <span className="opacity-40 font-normal">/</span>}
+                                                {s.is_commander && <span className="text-[10px] leading-none" title="מפקד">★</span>}
                                                 <span>{s.full_name}</span>
                                                 {s.note && (
                                                   <span
@@ -629,6 +635,15 @@ export default function ScheduleGrid({
                                                   >
                                                     {s.note}
                                                   </span>
+                                                )}
+                                                {builderMode && onToggleCommander && (
+                                                  <button
+                                                    onClick={e => { e.stopPropagation(); onToggleCommander(s.id, s.is_commander) }}
+                                                    title={s.is_commander ? 'הסר מפקד' : 'סמן כמפקד'}
+                                                    className={`text-[10px] leading-none ${s.is_commander ? 'opacity-60 hover:opacity-100' : 'opacity-25 hover:opacity-100'}`}
+                                                  >
+                                                    {s.is_commander ? '☆' : '★'}
+                                                  </button>
                                                 )}
                                               </span>
                                             ))}

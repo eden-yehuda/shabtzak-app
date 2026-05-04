@@ -64,6 +64,7 @@ export default function EditSchedule() {
   const [llmResult, setLlmResult] = useState<string | null>(null)
   const [llmLoading, setLlmLoading] = useState(false)
   const [confirmPublish, setConfirmPublish] = useState(false)
+  const [publishFromDate, setPublishFromDate] = useState<string>('') // empty = publish all
   const [publishing, setPublishing] = useState(false)
   const [unpublishing, setUnpublishing] = useState(false)
 
@@ -140,19 +141,34 @@ export default function EditSchedule() {
     }
   }
 
+  function isoDateLocal2(d: Date): string {
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
+  }
+
   async function publish() {
     if (!scheduleId || publishing || !schedule) return
     setPublishing(true)
     try {
-      // Snapshot working copy → published_versions
-      await addDoc(publishedVersionsRef(), {
-        schedule_id: scheduleId,
-        schedule_name: schedule.name,
-        schedule_start: Timestamp.fromDate(schedule.start_datetime),
-        schedule_end: Timestamp.fromDate(schedule.end_datetime),
-        day_start_hour: schedule.day_start_hour ?? 2,
-        home_leave_hour: schedule.home_leave_hour ?? null,
-        tasks: tasks.map(t => ({
+      // Decide which tasks to take from the WORKING copy (vs. previous snapshot, if partial).
+      const fromDate = publishFromDate.trim()
+      const isPartial = fromDate !== ''
+
+      // Build the new tasks/assignments lists
+      let mergedTasks: Array<Record<string, unknown>> = []
+      let mergedAssignments: Array<Record<string, unknown>> = []
+
+      // Working-copy slices: if partial, only include tasks starting >= fromDate
+      const workingTasks = isPartial
+        ? tasks.filter(t => isoDateLocal2(t.start_datetime) >= fromDate)
+        : tasks
+      const workingTaskIds = new Set(workingTasks.map(t => t.id))
+      const workingAssignments = isPartial
+        ? assignments.filter(a => workingTaskIds.has(a.task_id))
+        : assignments
+
+      // Add working copy slice
+      for (const t of workingTasks) {
+        mergedTasks.push({
           id: t.id,
           task_type: t.task_type,
           task_name: t.task_name,
@@ -161,23 +177,66 @@ export default function EditSchedule() {
           requires_commander: t.requires_commander ?? false,
           required_people_count: t.required_people_count ?? 0,
           notes: t.notes ?? '',
-        })),
-        assignments: assignments.map(a => ({
+        })
+      }
+      for (const a of workingAssignments) {
+        mergedAssignments.push({
           id: a.id,
           task_id: a.task_id,
           soldier_id: a.soldier_id,
           order: a.order ?? 1,
           alternating_group: a.alternating_group ?? null,
           note: a.note ?? '',
-        })),
+        })
+      }
+
+      // Partial: keep PRE-fromDate tasks/assignments from the most recent published snapshot
+      if (isPartial && publishedVersions.length > 0) {
+        const prevDoc = await getDocs(query(publishedVersionsRef(), where('schedule_id', '==', scheduleId)))
+        const prevSorted = [...prevDoc.docs].sort((a, b) =>
+          (b.data().published_at?.toMillis?.() ?? 0) - (a.data().published_at?.toMillis?.() ?? 0)
+        )
+        const prevData = prevSorted[0]?.data()
+        if (prevData) {
+          const prevTasks: Array<Record<string, unknown>> = (prevData.tasks ?? []) as Array<Record<string, unknown>>
+          const prevAssignments: Array<Record<string, unknown>> = (prevData.assignments ?? []) as Array<Record<string, unknown>>
+
+          const keptTaskIds = new Set<string>()
+          for (const t of prevTasks) {
+            const startTs = t.start_datetime as { toDate(): Date }
+            const startDate = isoDateLocal2(startTs.toDate())
+            if (startDate < fromDate) {
+              mergedTasks.push(t) // keep as-is (already serialized)
+              keptTaskIds.add(t.id as string)
+            }
+          }
+          for (const a of prevAssignments) {
+            if (keptTaskIds.has(a.task_id as string)) {
+              mergedAssignments.push(a)
+            }
+          }
+        }
+      }
+
+      await addDoc(publishedVersionsRef(), {
+        schedule_id: scheduleId,
+        schedule_name: schedule.name,
+        schedule_start: Timestamp.fromDate(schedule.start_datetime),
+        schedule_end: Timestamp.fromDate(schedule.end_datetime),
+        day_start_hour: schedule.day_start_hour ?? 2,
+        home_leave_hour: schedule.home_leave_hour ?? null,
+        tasks: mergedTasks,
+        assignments: mergedAssignments,
         published_at: serverTimestamp(),
         published_by: typeof window !== 'undefined' ? (localStorage.getItem('admin_name') ?? 'מנהל') : 'מנהל',
+        partial_from_date: isPartial ? fromDate : null,
       })
       // Mark schedule as published (status flag still useful for filtering)
       await updateDoc(doc(db, 'schedules', scheduleId), { status: 'published' })
     } catch (e) { console.error(e); alert('פרסום נכשל — נסה שוב') }
     finally { setPublishing(false) }
     setConfirmPublish(false)
+    setPublishFromDate('')
   }
 
   async function unpublish() {
@@ -601,6 +660,20 @@ export default function EditSchedule() {
                   const a = assignments.find(a => a.task_id === taskId && a.soldier_id === soldierId)
                   if (a) { await deleteAssignment(a.id); await touchSchedule() }
                 }}
+                onToggleCommander={async (soldierId, currentValue) => {
+                  const soldier = soldiers.find(s => s.id === soldierId)
+                  const action = currentValue ? 'להסיר את הסימון "מפקד" מ' : 'לסמן כמפקד את '
+                  if (!confirm(`האם ${action}${soldier?.full_name ?? 'חייל זה'}? (משפיע על כל השבצ"קים)`)) return
+                  try {
+                    await updateDoc(doc(db, 'soldiers', soldierId), { is_commander: !currentValue })
+                    pushUndo({
+                      label: 'שינוי סטטוס מפקד',
+                      undo: async () => {
+                        await updateDoc(doc(db, 'soldiers', soldierId), { is_commander: currentValue })
+                      },
+                    })
+                  } catch { alert('עדכון סטטוס מפקד נכשל') }
+                }}
                 onEditAssignmentNote={async (taskId, soldierId, currentNote) => {
                   const a = assignments.find(a => a.task_id === taskId && a.soldier_id === soldierId)
                   if (!a) return
@@ -701,13 +774,48 @@ export default function EditSchedule() {
       )}
 
       {confirmPublish && (
-        <ConfirmModal
-          message={errorCount > 0
-            ? `ישנן ${errorCount} שגיאות פתוחות. לפרסם בכל זאת?`
-            : `לפרסם את השבצ"ק? הלוחמים יראו אותו מיידית.`}
-          onConfirm={publish}
-          onCancel={() => setConfirmPublish(false)}
-        />
+        <>
+          <div className="fixed inset-0 bg-black/40 z-50" onClick={() => setConfirmPublish(false)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl z-50 w-[26rem] max-w-[90vw] p-5" dir="rtl">
+            <h3 className="text-lg font-bold text-navy mb-3">פרסום שבצ"ק</h3>
+            {errorCount > 0 && (
+              <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                ⛔ ישנן {errorCount} שגיאות פתוחות. ניתן לפרסם בכל זאת.
+              </p>
+            )}
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-slate-700 mb-1">
+                פרסום מתאריך (לא חובה):
+              </label>
+              <input type="date" value={publishFromDate}
+                onChange={e => setPublishFromDate(e.target.value)}
+                min={schedule?.start_datetime ? isoDateLocal2(schedule.start_datetime) : undefined}
+                max={schedule?.end_datetime ? isoDateLocal2(schedule.end_datetime) : undefined}
+                className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-full" />
+              <p className="text-xs text-slate-500 mt-1">
+                {publishFromDate
+                  ? `יפרסמו רק שינויים מ-${publishFromDate} ואילך. ימים קודמים נשארים כמו שפורסמו לאחרונה.`
+                  : 'השאר ריק כדי לפרסם את כל השבצ"ק. בחר תאריך כדי לפרסם רק מתאריך זה ואילך.'}
+              </p>
+              {publishFromDate && (
+                <button onClick={() => setPublishFromDate('')}
+                  className="text-xs text-navy hover:underline mt-1">
+                  נקה ופרסם הכל
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmPublish(false)}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition">
+                ביטול
+              </button>
+              <button onClick={publish} disabled={publishing}
+                className="px-4 py-2 text-sm font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 disabled:cursor-wait transition">
+                {publishing ? '⏳ מפרסם...' : publishFromDate ? '📤 פרסם חלקית' : '📤 פרסם הכל'}
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </AdminLayout>
   )
