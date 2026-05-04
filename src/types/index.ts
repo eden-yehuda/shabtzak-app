@@ -52,6 +52,7 @@ export interface Assignment {
   order: number   // 0 = task commander, 1+ = rest in Excel order
   note?: string   // e.g. "עד 10", "מ15"
   alternating_group?: number // soldiers with the same non-null group in a task are shown together with " / "
+  is_acting_commander?: boolean // when true → this assignment shows ★ in the task card (per-task commander)
 }
 
 export interface LeaveRequest {

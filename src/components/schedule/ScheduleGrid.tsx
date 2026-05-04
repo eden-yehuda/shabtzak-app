@@ -15,7 +15,7 @@ interface Props {
   onSelectTask?: (taskId: string) => void
   onRemoveSoldier?: (taskId: string, soldierId: string) => void
   onEditAssignmentNote?: (taskId: string, soldierId: string, currentNote: string) => void
-  onToggleCommander?: (soldierId: string, currentValue: boolean) => void
+  onToggleActingCommander?: (taskId: string, soldierId: string, makeCommander: boolean) => void
   onMoveTask?: (taskId: string, hourDelta: number) => void
   onResizeTask?: (taskId: string, endHourDelta: number) => void
   onDeleteTask?: (taskId: string) => void
@@ -72,7 +72,7 @@ function addDays(dateStr: string, n: number): string {
 
 export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
-  currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, onSelectTask, onRemoveSoldier, onEditAssignmentNote, onToggleCommander,
+  currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, onSelectTask, onRemoveSoldier, onEditAssignmentNote, onToggleActingCommander,
   onMoveTask, onResizeTask, onDeleteTask, onMoveTaskToSlot, onCreateTaskAtSlot,
   onPairSoldiers, onUnpairSoldier, onDeleteColumn,
 }: Props) {
@@ -185,7 +185,7 @@ export default function ScheduleGrid({
     return m
   }, [tasks])
 
-  type AssignedSoldier = Soldier & { note?: string; alternating_group?: number }
+  type AssignedSoldier = Soldier & { note?: string; alternating_group?: number; is_acting_commander?: boolean }
 
   // Task types where commanders should NOT be auto-promoted to first row.
   // (כ"כ ב has its own duty rotation — assigned commanders are treated like regular soldiers.)
@@ -195,9 +195,14 @@ export default function ScheduleGrid({
     const result: AssignedSoldier[] = []
     for (const a of assignments.filter(a => a.task_id === task.id).sort((a, b) => (a.order ?? 99) - (b.order ?? 99))) {
       const s = soldierMap[a.soldier_id]
-      if (s) result.push({ ...s, note: a.note, alternating_group: a.alternating_group })
+      if (s) result.push({ ...s, note: a.note, alternating_group: a.alternating_group, is_acting_commander: a.is_acting_commander ?? false })
     }
-    // Auto-promote commanders to first — unless this task type opts out
+    // Per-task acting commander always takes priority — promoted to first
+    if (result.some(s => s.is_acting_commander)) {
+      result.sort((a, b) => (a.is_acting_commander ? 0 : 1) - (b.is_acting_commander ? 0 : 1))
+      return result
+    }
+    // No acting commander: optionally auto-promote a real commander (unless task type opts out)
     const hasCommander = result.some(s => s.is_commander)
     if (hasCommander && !NO_COMMANDER_PROMOTION_TYPES.has(task.task_type)) {
       result.sort((a, b) => (a.is_commander ? 0 : 1) - (b.is_commander ? 0 : 1))
@@ -237,32 +242,27 @@ export default function ScheduleGrid({
     const prevStr = isoDate(prev)
 
     // All approved leave records for this date
-    const homeRecords = finalLeave.filter(r => r.date === dateStr && r.status === 'approved')
+    const homeToday = new Set(
+      finalLeave.filter(r => r.date === dateStr && r.status === 'approved').map(r => r.soldier_id)
+    )
+    const homeYesterday = new Set(
+      finalLeave.filter(r => r.date === prevStr && r.status === 'approved').map(r => r.soldier_id)
+    )
 
-    // Split into:
-    //   stayingHome — was on leave yesterday too (continuing home leave)
-    //   leavingToday — going home today (was here yesterday)
-    const stayingHome: string[] = []
-    const leavingToday: string[] = []
-    for (const r of homeRecords) {
-      const wasHomeYesterday = finalLeave.some(f =>
-        f.soldier_id === r.soldier_id && f.date === prevStr && f.status === 'approved'
-      )
-      const name = soldierMap[r.soldier_id]?.full_name
-      if (!name) continue
-      if (wasHomeYesterday) stayingHome.push(name)
-      else leavingToday.push(name)
+    const stayingHome: string[] = [] // home both days
+    const leavingToday: string[] = [] // home today, was here yesterday
+    const returning: string[] = []   // was home yesterday, here today
+    const present: string[] = []     // here both days
+
+    for (const s of soldiers) {
+      if (!s.is_active) continue
+      const isHome = homeToday.has(s.id)
+      const wasHome = homeYesterday.has(s.id)
+      if (isHome && wasHome) stayingHome.push(s.full_name)
+      else if (isHome) leavingToday.push(s.full_name)
+      else if (wasHome) returning.push(s.full_name)
+      else present.push(s.full_name)
     }
-
-    // Returning today: was on leave yesterday but NOT on leave today
-    const returning = finalLeave
-      .filter(r => r.date === prevStr && r.status === 'approved')
-      .filter(r => !finalLeave.some(f => f.date === dateStr && f.soldier_id === r.soldier_id && f.status === 'approved'))
-      .map(r => soldierMap[r.soldier_id]?.full_name)
-      .filter((n): n is string => !!n)
-
-    const totalActive = soldiers.filter(s => s.is_active).length
-    const present = totalActive - homeRecords.length
     return { leavingToday, stayingHome, returning, present }
   }
 
@@ -360,29 +360,35 @@ export default function ScheduleGrid({
                   ↩ חוזר {formatHour(HOME_LEAVE_START)}
                 </span>
               )}
-              {helper && (
-                <div className="flex gap-2 text-xs text-slate-500 flex-wrap">
-                  {helper.leavingToday.length > 0 && (
-                    <span className="bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full">
-                      יוצא הביתה ב-{formatHour(HOME_LEAVE_START)}: {helper.leavingToday.join(', ')}
-                    </span>
-                  )}
-                  {helper.stayingHome.length > 0 && (
-                    <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
-                      נשאר בבית: {helper.stayingHome.join(', ')}
-                    </span>
-                  )}
-                  {helper.returning.length > 0 && (
-                    <span className="bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
-                      חזרה מהבית (עד {formatHour(HOME_LEAVE_START)}): {helper.returning.join(', ')}
-                    </span>
-                  )}
-                  <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
-                    נוכחים: {helper.present}
-                  </span>
-                </div>
-              )}
             </div>
+
+            {/* Status panel: present / returning / leaving / at home, stacked vertically */}
+            {helper && !isCollapsed && (
+              <div className="flex flex-col gap-1 mb-2 text-xs">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 flex flex-wrap items-baseline gap-x-2">
+                  <span className="font-bold text-emerald-800 shrink-0">✅ נמצאים ({helper.present.length}):</span>
+                  <span className="text-emerald-700">{helper.present.length > 0 ? helper.present.join(', ') : '—'}</span>
+                </div>
+                {helper.returning.length > 0 && (
+                  <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-1.5 flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-bold text-teal-800 shrink-0">↩ חוזרים ב-{formatHour(HOME_LEAVE_START)} ({helper.returning.length}):</span>
+                    <span className="text-teal-700">{helper.returning.join(', ')}</span>
+                  </div>
+                )}
+                {helper.leavingToday.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-bold text-amber-800 shrink-0">⤴ יוצאים ב-{formatHour(HOME_LEAVE_START)} ({helper.leavingToday.length}):</span>
+                    <span className="text-amber-700">{helper.leavingToday.join(', ')}</span>
+                  </div>
+                )}
+                {helper.stayingHome.length > 0 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-bold text-blue-800 shrink-0">🏠 בבית ({helper.stayingHome.length}):</span>
+                    <span className="text-blue-700">{helper.stayingHome.join(', ')}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {!isCollapsed && <table className="w-full border-collapse text-xs table-fixed" dir="rtl">
               <colgroup>
@@ -626,7 +632,9 @@ export default function ScheduleGrid({
                                             {row.map((s, si) => (
                                               <span key={s.id} className="flex items-center gap-0.5">
                                                 {si > 0 && <span className="opacity-40 font-normal">/</span>}
-                                                {s.is_commander && <span className="text-[10px] leading-none" title="מפקד">★</span>}
+                                                {s.is_acting_commander && (
+                                                  <span className="text-[11px] leading-none text-yellow-600" title="מפקד הכוח במשימה זו">★</span>
+                                                )}
                                                 <span>{s.full_name}</span>
                                                 {s.note && (
                                                   <span
@@ -636,13 +644,13 @@ export default function ScheduleGrid({
                                                     {s.note}
                                                   </span>
                                                 )}
-                                                {builderMode && onToggleCommander && (
+                                                {builderMode && onToggleActingCommander && (
                                                   <button
-                                                    onClick={e => { e.stopPropagation(); onToggleCommander(s.id, s.is_commander) }}
-                                                    title={s.is_commander ? 'הסר מפקד' : 'סמן כמפקד'}
-                                                    className={`text-[10px] leading-none ${s.is_commander ? 'opacity-60 hover:opacity-100' : 'opacity-25 hover:opacity-100'}`}
+                                                    onClick={e => { e.stopPropagation(); onToggleActingCommander(task.id, s.id, !s.is_acting_commander) }}
+                                                    title={s.is_acting_commander ? 'הסר ★ מפקד' : 'סמן כמפקד הכוח במשימה זו'}
+                                                    className={`text-[10px] leading-none ${s.is_acting_commander ? 'text-yellow-600 opacity-80 hover:opacity-100' : 'opacity-25 hover:opacity-100'}`}
                                                   >
-                                                    {s.is_commander ? '☆' : '★'}
+                                                    {s.is_acting_commander ? '☆' : '★'}
                                                   </button>
                                                 )}
                                               </span>

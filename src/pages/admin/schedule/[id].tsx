@@ -660,19 +660,38 @@ export default function EditSchedule() {
                   const a = assignments.find(a => a.task_id === taskId && a.soldier_id === soldierId)
                   if (a) { await deleteAssignment(a.id); await touchSchedule() }
                 }}
-                onToggleCommander={async (soldierId, currentValue) => {
-                  const soldier = soldiers.find(s => s.id === soldierId)
-                  const action = currentValue ? 'להסיר את הסימון "מפקד" מ' : 'לסמן כמפקד את '
-                  if (!confirm(`האם ${action}${soldier?.full_name ?? 'חייל זה'}? (משפיע על כל השבצ"קים)`)) return
+                onToggleActingCommander={async (taskId, soldierId, makeCommander) => {
+                  // Per-task acting commander: only ONE per task at a time.
+                  // First clear acting_commander from any other assignment in this task.
+                  const taskAssignments = assignments.filter(a => a.task_id === taskId)
+                  const target = taskAssignments.find(a => a.soldier_id === soldierId)
+                  if (!target) return
+
+                  // Snapshot prior state for undo
+                  const prior: Array<{ id: string; was: boolean }> = taskAssignments.map(a => ({
+                    id: a.id, was: !!a.is_acting_commander
+                  }))
+
                   try {
-                    await updateDoc(doc(db, 'soldiers', soldierId), { is_commander: !currentValue })
+                    if (makeCommander) {
+                      // Clear from siblings, set on target
+                      await Promise.all(taskAssignments.map(a => {
+                        if (a.id === target.id) return updateAssignment(a.id, { is_acting_commander: true })
+                        if (a.is_acting_commander) return updateAssignment(a.id, { is_acting_commander: false })
+                        return Promise.resolve()
+                      }))
+                    } else {
+                      await updateAssignment(target.id, { is_acting_commander: false })
+                    }
+                    await touchSchedule()
                     pushUndo({
-                      label: 'שינוי סטטוס מפקד',
+                      label: makeCommander ? 'סימון מפקד הכוח' : 'הסרת מפקד הכוח',
                       undo: async () => {
-                        await updateDoc(doc(db, 'soldiers', soldierId), { is_commander: currentValue })
+                        await Promise.all(prior.map(p => updateAssignment(p.id, { is_acting_commander: p.was })))
+                        await touchSchedule()
                       },
                     })
-                  } catch { alert('עדכון סטטוס מפקד נכשל') }
+                  } catch { alert('עדכון מפקד הכוח נכשל') }
                 }}
                 onEditAssignmentNote={async (taskId, soldierId, currentNote) => {
                   const a = assignments.find(a => a.task_id === taskId && a.soldier_id === soldierId)
