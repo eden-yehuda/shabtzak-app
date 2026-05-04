@@ -198,31 +198,30 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
 
   function renderSoldierButton(item: Item) {
     const { soldier, taskCount, isAssignedToSelected, restHours, status, isConcurrent, hoursToday } = item
-    // Can this soldier be assigned to the selected task, accounting for partial-day availability?
-    const canAssignByLeave = canAssignByLeaveStatus(status.key, selectedTask, homeLeaveHour)
-    const blocked = !canAssignByLeave
+    // Soft warning only — DO NOT disable. The שבצקיסט may want to override.
+    const violatesLeave = !canAssignByLeaveStatus(status.key, selectedTask, homeLeaveHour)
     // If no task is selected → clicking opens the soldier modal
     const handleClick = () => {
       if (!selectedTaskId) {
         setSoldierModalId(soldier.id)
         return
       }
-      if (!blocked) assign(soldier.id)
+      assign(soldier.id)
     }
-    const disabled = selectedTaskId ? (isAssignedToSelected || blocked) : false
+    const disabled = selectedTaskId ? isAssignedToSelected : false
     return (
       <button key={soldier.id} type="button"
         onClick={handleClick}
         disabled={disabled}
         className={`w-full flex flex-col items-stretch gap-1 px-2 py-1.5 rounded-lg border transition text-sm ${
           isAssignedToSelected ? 'bg-blue-50 border-blue-300 text-blue-700' :
-          blocked ? 'bg-slate-50 border-slate-100 text-slate-400 cursor-default opacity-60' :
+          violatesLeave ? 'bg-blue-50 border-blue-200 hover:border-navy hover:bg-blue-100 cursor-pointer' :
           isConcurrent ? 'bg-red-50 border-red-300' :
           !selectedTaskId ? 'bg-slate-50 border-slate-100 hover:bg-slate-100 cursor-pointer' :
           'bg-slate-50 border-slate-200 hover:border-navy hover:bg-white'
         }`}
         title={
-          blocked ? `לא זמין למשימה זו (${status.label})` :
+          violatesLeave ? `⚠ ${status.label} — לא צפוי להיות זמין, אבל ניתן לשבץ בכל זאת` :
           isConcurrent ? '⚠ משובץ במקביל למשימה אחרת' :
           !selectedTaskId ? 'לחץ לראות שיבוצים' : undefined
         }>
