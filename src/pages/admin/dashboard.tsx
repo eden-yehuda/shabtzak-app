@@ -2,6 +2,7 @@ import AdminLayout from '@/components/layout/AdminLayout'
 import { useLeaveCountByDate } from '@/hooks/useLeaveRequests'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useSchedules } from '@/hooks/useSchedules'
+import { useUnreadInquiriesCount } from '@/hooks/useUnreadInquiries'
 import Link from 'next/link'
 import { deleteDoc, doc, getDocs, query, where, collection } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
@@ -14,6 +15,7 @@ export default function AdminDashboard() {
   const soldiers = useSoldiers()
   const leaveCountByDate = useLeaveCountByDate()
   const schedules = useSchedules()
+  const unreadInquiries = useUnreadInquiriesCount()
 
   const today = new Date().toISOString().slice(0, 10)
   const todayCount = leaveCountByDate[today] || 0
@@ -38,6 +40,25 @@ export default function AdminDashboard() {
   return (
     <AdminLayout>
       <h1 className="text-2xl font-bold text-navy mb-6">דשבורד מנהל</h1>
+
+      {/* New-inquiry notification banner — disappears once all are marked as read */}
+      {unreadInquiries > 0 && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4 mb-6 flex items-center justify-between gap-3 flex-wrap shadow-sm" dir="rtl">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl animate-pulse">📨</span>
+            <div>
+              <div className="font-bold text-red-800 text-base">
+                {unreadInquiries === 1 ? 'יש פנייה חדשה שלא נקראה' : `יש ${unreadInquiries} פניות חדשות שלא נקראו`}
+              </div>
+              <div className="text-xs text-red-600">לחץ כדי לעבור לעמוד הפניות</div>
+            </div>
+          </div>
+          <Link href="/admin/inquiries"
+            className="bg-red-600 text-white rounded-lg px-4 py-2 text-sm font-bold hover:bg-red-700 transition shrink-0">
+            פתח פניות ←
+          </Link>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-8">
