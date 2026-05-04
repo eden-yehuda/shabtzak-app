@@ -210,9 +210,10 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* My tasks toggle */}
+      {/* My tasks toggle + my leave dates */}
       {selectedSoldierId && (
-        <div className="flex justify-end mb-3">
+        <div className="flex justify-between items-center gap-2 mb-3 flex-wrap">
+          <MyLeaveView soldierId={selectedSoldierId} finalLeave={finalLeave} />
           <button onClick={() => setMyTasksOnly(v => !v)}
             className={`text-sm px-4 py-1.5 rounded-full border transition ${
               myTasksOnly ? 'bg-navy text-white border-navy' : 'border-slate-300 text-slate-600'
@@ -255,5 +256,74 @@ export default function HomePage() {
         />
       )}
     </Layout>
+  )
+}
+
+// ── View-only display of the current soldier's approved leave dates ─────────
+function MyLeaveView({ soldierId, finalLeave }: {
+  soldierId: string
+  finalLeave: Array<{ soldier_id: string; date: string; status: string }>
+}) {
+  const [open, setOpen] = useState(false)
+  const myLeaves = useMemo(() =>
+    finalLeave
+      .filter(r => r.soldier_id === soldierId && r.status === 'approved')
+      .map(r => r.date)
+      .sort(),
+    [finalLeave, soldierId]
+  )
+  const today = new Date().toISOString().split('T')[0]
+  const upcoming = myLeaves.filter(d => d >= today)
+  const past = myLeaves.filter(d => d < today)
+
+  function formatDay(iso: string): string {
+    const d = new Date(iso + 'T12:00:00')
+    const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
+    return `${days[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
+  }
+
+  if (myLeaves.length === 0) {
+    return (
+      <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5">
+        🏠 אין יציאות מאושרות
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(o => !o)}
+        className="text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1.5 hover:bg-blue-100 font-semibold transition">
+        🏠 היציאות שלי ({upcoming.length} קרובות) {open ? '▲' : '▼'}
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 p-3 w-64 max-h-80 overflow-y-auto" dir="rtl">
+          {upcoming.length > 0 && (
+            <div className="mb-2">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">קרובות:</div>
+              <div className="flex flex-wrap gap-1">
+                {upcoming.map(d => (
+                  <span key={d} className="text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md px-2 py-0.5 font-semibold">
+                    {formatDay(d)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {past.length > 0 && (
+            <div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">בעבר:</div>
+              <div className="flex flex-wrap gap-1">
+                {past.map(d => (
+                  <span key={d} className="text-xs bg-slate-50 text-slate-400 border border-slate-200 rounded-md px-2 py-0.5">
+                    {formatDay(d)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

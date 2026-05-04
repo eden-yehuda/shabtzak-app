@@ -105,10 +105,14 @@ export default function EditSchedule() {
       await updateDoc(doc(db, 'schedules', scheduleId), { dismissed_validation_errors: next })
     } catch { alert('שחזור שגיאה נכשל') }
   }
+  const [rechecking, setRechecking] = useState(false)
   function recheckErrors() {
+    setRechecking(true)
     setValidationBump(n => n + 1)
     setLlmResult(null)
     setLlmChecked(false)
+    // brief visual ack so the user feels the click
+    setTimeout(() => setRechecking(false), 700)
   }
   // Counts exclude dismissed errors (since user marked them as OK)
   const dismissedSet = new Set(dismissedKeys)
@@ -603,9 +607,13 @@ export default function EditSchedule() {
             </div>
             <div className="p-4">
               <div className="flex justify-end mb-3">
-                <button onClick={recheckErrors}
-                  className="border border-slate-300 text-slate-700 rounded-lg px-3 py-1.5 text-xs font-semibold hover:border-navy hover:text-navy transition">
-                  🔄 בדוק שוב
+                <button onClick={recheckErrors} disabled={rechecking}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold border transition active:scale-95 ${
+                    rechecking
+                      ? 'bg-emerald-100 border-emerald-400 text-emerald-800'
+                      : 'border-slate-300 text-slate-700 hover:border-navy hover:text-navy hover:bg-slate-50'
+                  }`}>
+                  {rechecking ? '✓ נבדק מחדש' : '🔄 בדוק שוב'}
                 </button>
               </div>
               {validationErrors.length > 0

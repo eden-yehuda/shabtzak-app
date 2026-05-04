@@ -1,11 +1,12 @@
 import type { Task, Assignment, Soldier, LeaveRequest, ValidationError } from '@/types'
 import { doTasksOverlap, hoursGap } from './dateUtils'
 
-const MIN_REST_HOURS = 8
-const MAX_HOUR_IMBALANCE = 4
+const MIN_REST_HOURS = 16
+const MAX_HOUR_IMBALANCE = 8
+// Task types that don't count as a "real shift" for rest-gap purposes
+const NO_REST_IMPACT_TYPES = new Set(['כוננות'])
 
 // Pairs of task types that are explicitly allowed to overlap for the same soldier.
-// Order doesn't matter (checked both ways).
 export const ALLOWED_CONCURRENT_TYPES: Array<[string, string]> = [
   ['תורן רס"פ', 'כ"כ ב'],
 ]
@@ -37,13 +38,11 @@ export function validateSchedule(
 
   // Build: approved final leave dates per soldier (from finalLeave + fixed_home_ranges)
   const homeDates: Record<string, Set<string>> = {}
-
   for (const r of finalLeave) {
     if (r.status !== 'approved') continue
     if (!homeDates[r.soldier_id]) homeDates[r.soldier_id] = new Set()
     homeDates[r.soldier_id].add(r.date)
   }
-
   for (const s of soldiers) {
     for (const range of s.fixed_home_ranges ?? []) {
       if (!range.from || !range.to) continue
@@ -58,7 +57,7 @@ export function validateSchedule(
     }
   }
 
-  // 1. Assignment during home time (error)
+  // ─── 1. Assignment during home time ─────────────────────────────────
   for (const a of assignments) {
     const task = tasks.find(t => t.id === a.task_id)
     if (!task) continue
@@ -74,36 +73,49 @@ export function validateSchedule(
     }
   }
 
-  // 2. Double booking + rest check (per soldier)
+  // ─── 2. Overlapping tasks (same soldier in two tasks at the same time) ───
   for (const [soldier_id, stasks] of Object.entries(soldierTasks)) {
     const sorted = [...stasks].sort((a, b) => a.start_datetime.getTime() - b.start_datetime.getTime())
     for (let i = 0; i < sorted.length; i++) {
       for (let j = i + 1; j < sorted.length; j++) {
-        if (doTasksOverlap(
-          { start: sorted[i].start_datetime, end: sorted[i].end_datetime },
-          { start: sorted[j].start_datetime, end: sorted[j].end_datetime }
-        ) && !isAllowedConcurrent(sorted[i].task_type, sorted[j].task_type)) {
+        if (
+          doTasksOverlap(
+            { start: sorted[i].start_datetime, end: sorted[i].end_datetime },
+            { start: sorted[j].start_datetime, end: sorted[j].end_datetime }
+          ) &&
+          !isAllowedConcurrent(sorted[i].task_type, sorted[j].task_type)
+        ) {
           errors.push({
             type: 'error',
             soldier_id,
-            message: `שיבוץ כפול: ${sorted[i].task_name} ו-${sorted[j].task_name}`,
-          })
-        }
-      }
-      if (i + 1 < sorted.length) {
-        const gap = hoursGap(sorted[i].end_datetime, sorted[i + 1].start_datetime)
-        if (gap >= 0 && gap < MIN_REST_HOURS) {
-          errors.push({
-            type: 'warning',
-            soldier_id,
-            message: `מנוחה קצרה (${gap.toFixed(1)}h): ${sorted[i].task_name} → ${sorted[i + 1].task_name}`,
+            task_id: sorted[i].id,
+            message: `${soldierMap[soldier_id]?.full_name ?? soldier_id}: שיבוץ כפול — ${sorted[i].task_name} ו-${sorted[j].task_name}`,
           })
         }
       }
     }
   }
 
-  // 3. Understaffed tasks (error)
+  // ─── 3. Insufficient rest (<16h between non-כוננות tasks) ───────────
+  for (const [soldier_id, stasks] of Object.entries(soldierTasks)) {
+    // Only count "real" shifts — exclude כוננות from rest calculation
+    const realShifts = stasks
+      .filter(t => !NO_REST_IMPACT_TYPES.has(t.task_type))
+      .sort((a, b) => a.start_datetime.getTime() - b.start_datetime.getTime())
+    for (let i = 0; i + 1 < realShifts.length; i++) {
+      const gap = hoursGap(realShifts[i].end_datetime, realShifts[i + 1].start_datetime)
+      if (gap >= 0 && gap < MIN_REST_HOURS) {
+        errors.push({
+          type: 'error',
+          soldier_id,
+          task_id: realShifts[i + 1].id,
+          message: `${soldierMap[soldier_id]?.full_name ?? soldier_id}: רק ${gap.toFixed(0)}ש׳ מנוחה בין ${realShifts[i].task_name} ל-${realShifts[i + 1].task_name} (נדרש ${MIN_REST_HOURS}ש׳)`,
+        })
+      }
+    }
+  }
+
+  // ─── 4. Understaffed tasks ──────────────────────────────────────────
   const taskCount: Record<string, number> = {}
   for (const a of assignments) taskCount[a.task_id] = (taskCount[a.task_id] || 0) + 1
   for (const task of tasks) {
@@ -117,7 +129,7 @@ export function validateSchedule(
     }
   }
 
-  // 4. Commander required but missing (error)
+  // ─── 5. Commander required but missing ──────────────────────────────
   for (const task of tasks) {
     if (!task.requires_commander) continue
     const assignedSoldiers = assignments
@@ -134,52 +146,57 @@ export function validateSchedule(
     }
   }
 
-  // 5. Returning soldier not assigned after 10:00 (warning)
-  const tasksByDate: Record<string, Task[]> = {}
-  for (const t of tasks) {
-    const d = t.start_datetime.toISOString().split('T')[0]
-    if (!tasksByDate[d]) tasksByDate[d] = []
-    tasksByDate[d].push(t)
-  }
-  for (const [dateStr, dayTasks] of Object.entries(tasksByDate)) {
-    const prev = new Date(dateStr + 'T12:00:00')
-    prev.setDate(prev.getDate() - 1)
-    const prevStr = prev.toISOString().split('T')[0]
+  // ─── 6. Workload imbalance (only soldiers who were PRESENT at least one schedule day) ──
+  // Determine the schedule's day range
+  const allDates = tasks.map(t => t.start_datetime.toISOString().split('T')[0])
+  const scheduleDays = Array.from(new Set(allDates)).sort()
+  if (scheduleDays.length > 0) {
+    // For each active soldier: count days they were PRESENT in this schedule (i.e., not on leave that day)
+    const presenceDays: Record<string, number> = {}
     for (const s of soldiers) {
       if (!s.is_active) continue
-      const wasHome = homeDates[s.id]?.has(prevStr)
-      const isHome = homeDates[s.id]?.has(dateStr)
-      if (wasHome && !isHome) {
-        const after10 = dayTasks.filter(t => t.start_datetime.getHours() >= 10)
-        const isAssigned = assignments.some(a =>
-          a.soldier_id === s.id && after10.some(t => t.id === a.task_id)
-        )
-        if (!isAssigned) {
-          errors.push({
-            type: 'warning',
-            soldier_id: s.id,
-            message: `${s.full_name} חוזר ב-${dateStr} — לא משובץ לאחר 10:00`,
-          })
-        }
+      let presentCount = 0
+      for (const day of scheduleDays) {
+        if (!homeDates[s.id]?.has(day)) presentCount++
+      }
+      if (presentCount > 0) presenceDays[s.id] = presentCount
+    }
+
+    // Hours per present soldier, prorated by their presence ratio
+    const presentSoldierIds = Object.keys(presenceDays)
+    const fullPresence = scheduleDays.length
+    const normalizedHours = presentSoldierIds.map(sid => {
+      const tasks_ = soldierTasks[sid] ?? []
+      const hours = tasks_.reduce((sum, t) => sum + hoursGap(t.start_datetime, t.end_datetime), 0)
+      // Normalize by presence ratio so soldiers who were home most of the time aren't unfairly compared
+      const presenceRatio = presenceDays[sid] / fullPresence
+      const normalized = presenceRatio > 0 ? hours / presenceRatio : hours
+      return { sid, hours, normalized }
+    })
+
+    if (normalizedHours.length >= 2) {
+      const max = Math.max(...normalizedHours.map(s => s.normalized))
+      const min = Math.min(...normalizedHours.map(s => s.normalized))
+      if (max - min > MAX_HOUR_IMBALANCE) {
+        const maxSoldier = normalizedHours.find(s => s.normalized === max)
+        const minSoldier = normalizedHours.find(s => s.normalized === min)
+        const maxName = soldierMap[maxSoldier?.sid ?? '']?.full_name ?? '?'
+        const minName = soldierMap[minSoldier?.sid ?? '']?.full_name ?? '?'
+        errors.push({
+          type: 'error',
+          message: `חלוקה לא שוויונית בין לוחמים נוכחים: ${maxName} עומס מנורמל ${max.toFixed(0)}ש׳, ${minName} ${min.toFixed(0)}ש׳ (הפרש ${(max - min).toFixed(0)}ש׳)`,
+        })
       }
     }
   }
 
-  // 6. Workload imbalance (warning)
-  const soldierHours = Object.entries(soldierTasks).map(([soldier_id, stasks]) => ({
-    soldier_id,
-    hours: stasks.reduce((sum, t) => sum + hoursGap(t.start_datetime, t.end_datetime), 0),
-  }))
-  if (soldierHours.length >= 2) {
-    const max = Math.max(...soldierHours.map(s => s.hours))
-    const min = Math.min(...soldierHours.map(s => s.hours))
-    if (max - min > MAX_HOUR_IMBALANCE) {
-      errors.push({
-        type: 'warning',
-        message: `חלוקה לא שוויונית: הפרש ${(max - min).toFixed(1)} שעות`,
-      })
-    }
-  }
+  // ─── Sort errors chronologically by associated task date ────────────
+  const taskById = new Map(tasks.map(t => [t.id, t]))
+  errors.sort((a, b) => {
+    const ta = a.task_id ? taskById.get(a.task_id)?.start_datetime.getTime() ?? Infinity : Infinity
+    const tb = b.task_id ? taskById.get(b.task_id)?.start_datetime.getTime() ?? Infinity : Infinity
+    return ta - tb
+  })
 
   return errors
 }
