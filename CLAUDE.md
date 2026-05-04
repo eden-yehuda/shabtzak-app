@@ -1,19 +1,37 @@
 # Shabtzak App — הוראות לClaude
 
-## אחרי כל שינוי בקוד
+## Workflow חדש: staging → prod
+
+מעכשיו **כל שינוי הולך קודם ל-staging**. רק לאחר אישור המשתמש מקדמים ל-prod.
+
+### לאחר כל שינוי בקוד — staging only
 
 בסיום כל תיקון או שינוי, בצע אוטומטית:
 
 ```bash
 git add -A
 git commit -m "fix: <תיאור קצר של השינוי>"
-git checkout main
+git checkout staging
 git merge master --no-edit
+git push origin staging
+git checkout master
+git push origin master
+```
+
+הפרסום ל-staging מתעדכן אוטומטית. **אל תיגע בענף `main`** עד שהמשתמש מאשר את ה-staging.
+
+### קידום ל-prod (רק אחרי אישור מפורש מהמשתמש)
+
+כשהמשתמש כותב משהו כמו "תקדם לפרוד", "אשר", "תפרסם", "go live":
+
+```bash
+git checkout main
+git merge staging --no-edit
 git push origin main
 git checkout master
 ```
 
-אל תשאל את המשתמש אם לעשות push — פשוט עשה זאת.
+לפני קידום, ודא שהמשתמש אישר במפורש את ה-staging.
 
 ## פרטי פרויקט
 
@@ -21,4 +39,15 @@ git checkout master
 - **Stack:** Next.js 14, TypeScript, Tailwind CSS, Firebase Firestore
 - **כיוון:** RTL, עברית בלבד
 - **GitHub:** https://github.com/eden-yehuda/shabtzak-app
-- **Netlify:** https://shivzuk.netlify.app — מחובר ל-GitHub ענף **main** (לא master!), מתעדכן אוטומטית בכל push ל-main
+
+### סביבות Netlify
+
+| סביבה   | ענף       | URL                                          |
+|---------|-----------|----------------------------------------------|
+| Prod    | `main`    | https://shivzuk.netlify.app                  |
+| Staging | `staging` | https://staging--shivzuk.netlify.app *(נדרש להפעיל branch deploys בנטליפיי)* |
+
+### דמו לציבור
+
+- `/demo` — תצוגת לוחמים אנונימית (שמות = "מפקד 1", "לוחם 1", ...)
+- `/admin/login` — שדות אימייל/סיסמה מוצגים גלויים: `demo@shivzuk.app` / `demo1234` (יש ליצור משתמש Firebase תואם)
