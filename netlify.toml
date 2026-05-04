@@ -8,7 +8,12 @@
 [context.dev]
   command = "npm run build"
 
-# Enable branch deploys for preview branches
+# Staging branch deploy — preview new changes before promoting to main/prod
+[context.staging]
+  command = "npm run build"
+  publish = "out"
+
+# Existing legacy preview branch — kept for compatibility
 [context."preview/admin-redesign"]
   command = "npm run build"
   publish = "out"
