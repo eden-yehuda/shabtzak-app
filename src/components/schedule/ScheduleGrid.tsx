@@ -140,7 +140,20 @@ export default function ScheduleGrid({
         .forEach(r => taskDays.add(r.date))
     }
 
-    const sortedDays = Array.from(taskDays).sort()
+    let sortedDays = Array.from(taskDays).sort()
+
+    // Soldier-facing view: only show today and the next 3 calendar days (4-day window).
+    // The schedule may contain more days, but soldiers see a rolling window.
+    if (!builderMode && sortedDays.length > 0) {
+      const today = isoDate(new Date())
+      const horizon = (() => {
+        const d = new Date()
+        d.setDate(d.getDate() + 3)
+        return isoDate(d)
+      })()
+      sortedDays = sortedDays.filter(d => d >= today && d <= horizon)
+    }
+
     if (sortedDays.length === 0) return { days: [], allColumns: [] }
 
     // Ensure columns has at least one entry even if all days are home days

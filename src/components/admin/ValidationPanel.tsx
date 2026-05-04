@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ValidationError } from '@/types'
+import type { ValidationError, Task } from '@/types'
 
 // Stable key per error: type + soldier + task + message text
 export function errorKey(e: ValidationError): string {
@@ -11,11 +11,22 @@ interface Props {
   dismissedKeys?: string[]
   onDismiss?: (key: string) => void
   onRestore?: (key: string) => void
+  tasks?: Task[] // optional, used to build "day | task" header per error
 }
 
-export default function ValidationPanel({ errors, dismissedKeys = [], onDismiss, onRestore }: Props) {
+const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
+function formatTaskHeader(task: Task | undefined): string | null {
+  if (!task) return null
+  const d = task.start_datetime
+  const dayName = DAY_NAMES[d.getDay()]
+  const dateStr = `${d.getDate()}/${d.getMonth() + 1}`
+  return `${dayName} ${dateStr} | ${task.task_type}`
+}
+
+export default function ValidationPanel({ errors, dismissedKeys = [], onDismiss, onRestore, tasks = [] }: Props) {
   const [showDismissed, setShowDismissed] = useState(false)
   const dismissedSet = new Set(dismissedKeys)
+  const taskById = new Map(tasks.map(t => [t.id, t]))
 
   // Split visible vs dismissed
   const visible = errors.filter(e => !dismissedSet.has(errorKey(e)))
@@ -42,30 +53,38 @@ export default function ValidationPanel({ errors, dismissedKeys = [], onDismiss,
 
       {visibleErrs.map(e => {
         const k = errorKey(e)
+        const header = formatTaskHeader(e.task_id ? taskById.get(e.task_id) : undefined)
         return (
-          <div key={`err-${k}`} className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex gap-2 items-start justify-between">
-            <span className="flex-1">🔴 {e.message}</span>
-            {onDismiss && (
-              <button onClick={() => onDismiss(k)} title="סמן כתקין — הסתר שגיאה זו"
-                className="text-red-400 hover:text-green-600 hover:bg-white px-1.5 py-0.5 rounded text-base leading-none shrink-0">
-                ✓
-              </button>
-            )}
+          <div key={`err-${k}`} className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex flex-col gap-1">
+            {header && <div className="text-[11px] font-bold text-red-900/70 uppercase tracking-wide">{header}</div>}
+            <div className="flex gap-2 items-start justify-between">
+              <span className="flex-1">🔴 {e.message}</span>
+              {onDismiss && (
+                <button onClick={() => onDismiss(k)} title="סמן כתקין — הסתר שגיאה זו"
+                  className="text-red-400 hover:text-green-600 hover:bg-white px-1.5 py-0.5 rounded text-base leading-none shrink-0">
+                  ✓
+                </button>
+              )}
+            </div>
           </div>
         )
       })}
 
       {visibleWarns.map(e => {
         const k = errorKey(e)
+        const header = formatTaskHeader(e.task_id ? taskById.get(e.task_id) : undefined)
         return (
-          <div key={`warn-${k}`} className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 text-sm text-yellow-800 flex gap-2 items-start justify-between">
-            <span className="flex-1">🟡 {e.message}</span>
-            {onDismiss && (
-              <button onClick={() => onDismiss(k)} title="סמן כתקין — הסתר אזהרה זו"
-                className="text-yellow-500 hover:text-green-600 hover:bg-white px-1.5 py-0.5 rounded text-base leading-none shrink-0">
-                ✓
-              </button>
-            )}
+          <div key={`warn-${k}`} className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 text-sm text-yellow-800 flex flex-col gap-1">
+            {header && <div className="text-[11px] font-bold text-yellow-900/70 uppercase tracking-wide">{header}</div>}
+            <div className="flex gap-2 items-start justify-between">
+              <span className="flex-1">🟡 {e.message}</span>
+              {onDismiss && (
+                <button onClick={() => onDismiss(k)} title="סמן כתקין — הסתר אזהרה זו"
+                  className="text-yellow-500 hover:text-green-600 hover:bg-white px-1.5 py-0.5 rounded text-base leading-none shrink-0">
+                  ✓
+                </button>
+              )}
+            </div>
           </div>
         )
       })}
