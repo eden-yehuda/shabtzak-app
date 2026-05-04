@@ -18,6 +18,7 @@ export interface Schedule {
   updated_at?: Date
   day_start_hour?: number
   home_leave_hour?: number  // hour when soldiers swap (depart/return); defaults to day_start_hour
+  dismissed_validation_errors?: string[]  // stable keys of errors the user has manually marked as OK
 }
 
 export interface TaskType {

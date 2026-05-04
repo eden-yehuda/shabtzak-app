@@ -8,7 +8,7 @@ import ScheduleGrid from '@/components/schedule/ScheduleGrid'
 import SoldierPanel from '@/components/admin/SoldierPanel'
 import TaskModal from '@/components/admin/TaskModal'
 import SyncFromSheets from '@/components/admin/SyncFromSheets'
-import ValidationPanel from '@/components/admin/ValidationPanel'
+import ValidationPanel, { errorKey as validationErrorKey } from '@/components/admin/ValidationPanel'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useScheduleTasks } from '@/hooks/useSchedule'
@@ -68,12 +68,45 @@ export default function EditSchedule() {
   const [publishing, setPublishing] = useState(false)
   const [unpublishing, setUnpublishing] = useState(false)
 
+  // Bumping this state forces a re-validation (used by the "בדוק שוב" button)
+  const [validationBump, setValidationBump] = useState(0)
   useEffect(() => {
     if (!scheduleId) return
     const errors = validateSchedule(tasks, assignments, soldiers, finalLeave)
     setValidationErrors(errors)
     setLlmChecked(false)
-  }, [tasks, assignments, soldiers, finalLeave, scheduleId])
+  }, [tasks, assignments, soldiers, finalLeave, scheduleId, validationBump])
+
+  // Dismissed-error keys live on the schedule document (per-schedule state, persisted).
+  const dismissedKeys = schedule?.dismissed_validation_errors ?? []
+  async function dismissError(key: string) {
+    if (!scheduleId) return
+    const next = Array.from(new Set([...dismissedKeys, key]))
+    try {
+      await updateDoc(doc(db, 'schedules', scheduleId), { dismissed_validation_errors: next })
+      pushUndo({
+        label: 'דחיית שגיאה',
+        undo: async () => {
+          await updateDoc(doc(db, 'schedules', scheduleId), { dismissed_validation_errors: dismissedKeys })
+        },
+      })
+    } catch { alert('דחיית שגיאה נכשלה') }
+  }
+  async function restoreError(key: string) {
+    if (!scheduleId) return
+    const next = dismissedKeys.filter(k => k !== key)
+    try {
+      await updateDoc(doc(db, 'schedules', scheduleId), { dismissed_validation_errors: next })
+    } catch { alert('שחזור שגיאה נכשל') }
+  }
+  function recheckErrors() {
+    setValidationBump(n => n + 1)
+    setLlmResult(null)
+    setLlmChecked(false)
+  }
+  // Counts exclude dismissed errors (since user marked them as OK)
+  const dismissedSet = new Set(dismissedKeys)
+  const visibleErrors = validationErrors.filter(e => !dismissedSet.has(validationErrorKey(e)))
 
   // NOTE: do NOT auto-unpublish on edit. The published version (snapshot) remains visible
   // to soldiers regardless of edits to the working copy. Only an explicit "publish"
@@ -307,8 +340,8 @@ export default function EditSchedule() {
     } catch (e) { console.error(e); alert('שחזור נכשל: ' + (e as Error).message) }
   }
 
-  const errorCount = validationErrors.filter(e => e.type === 'error').length
-  const warnCount = validationErrors.filter(e => e.type === 'warning').length
+  const errorCount = visibleErrors.filter(e => e.type === 'error').length
+  const warnCount = visibleErrors.filter(e => e.type === 'warning').length
 
   // Auto-unpublish when any edit is made — soldiers won't see mid-edit state
   // Edits only update the working copy + updated_at marker. The published snapshot
@@ -591,8 +624,15 @@ export default function EditSchedule() {
               </button>
             </div>
             <div className="p-4">
+              <div className="flex justify-end mb-3">
+                <button onClick={recheckErrors}
+                  className="border border-slate-300 text-slate-700 rounded-lg px-3 py-1.5 text-xs font-semibold hover:border-navy hover:text-navy transition">
+                  🔄 בדוק שוב
+                </button>
+              </div>
               {validationErrors.length > 0
-                ? <ValidationPanel errors={validationErrors} />
+                ? <ValidationPanel errors={validationErrors} dismissedKeys={dismissedKeys}
+                    onDismiss={dismissError} onRestore={restoreError} />
                 : <p className="text-sm text-green-700 text-center py-8">אין שגיאות בשבצ&quot;ק</p>}
             </div>
           </div>
