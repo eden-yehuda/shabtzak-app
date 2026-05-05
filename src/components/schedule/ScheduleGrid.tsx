@@ -200,11 +200,19 @@ export default function ScheduleGrid({
     return m
   }, [tasks])
 
-  type AssignedSoldier = Soldier & { note?: string; alternating_group?: number; is_acting_commander?: boolean }
+  // is_designated_commander = should be displayed as the task's commander (BOLD).
+  // Set when (a) explicitly marked acting commander, OR (b) auto-promoted real commander
+  // in a task type that opts in to commander promotion. Otherwise — false (no bold).
+  type AssignedSoldier = Soldier & {
+    note?: string
+    alternating_group?: number
+    is_acting_commander?: boolean
+    is_designated_commander?: boolean
+  }
 
-  // Task types where commanders should NOT be auto-promoted to first row.
-  // (כ"כ ב has its own duty rotation — assigned commanders are treated like regular soldiers.)
-  const NO_COMMANDER_PROMOTION_TYPES = new Set(['כ"כ ב'])
+  // Task types where commanders should NOT be auto-promoted / shown as the leader.
+  // (כ"כ ב = independent duty rotation. בלת"מ = unplanned response, no commander designation.)
+  const NO_COMMANDER_PROMOTION_TYPES = new Set(['כ"כ ב', 'בלת"מ'])
 
   function assignedFor(task: Task): AssignedSoldier[] {
     const result: AssignedSoldier[] = []
@@ -212,16 +220,18 @@ export default function ScheduleGrid({
       const s = soldierMap[a.soldier_id]
       if (s) result.push({ ...s, note: a.note, alternating_group: a.alternating_group, is_acting_commander: a.is_acting_commander ?? false })
     }
-    // Per-task acting commander always takes priority — promoted to first
+    // Per-task acting commander always takes priority — promoted to first AND marked as designated
     if (result.some(s => s.is_acting_commander)) {
       result.sort((a, b) => (a.is_acting_commander ? 0 : 1) - (b.is_acting_commander ? 0 : 1))
+      result.forEach(s => { s.is_designated_commander = !!s.is_acting_commander })
       return result
     }
-    // No acting commander: optionally auto-promote a real commander (unless task type opts out)
-    const hasCommander = result.some(s => s.is_commander)
-    if (hasCommander && !NO_COMMANDER_PROMOTION_TYPES.has(task.task_type)) {
+    // No acting commander: auto-promote a real commander only in non-opt-out task types
+    if (!NO_COMMANDER_PROMOTION_TYPES.has(task.task_type) && result.some(s => s.is_commander)) {
       result.sort((a, b) => (a.is_commander ? 0 : 1) - (b.is_commander ? 0 : 1))
+      result.forEach(s => { s.is_designated_commander = !!s.is_commander })
     }
+    // Otherwise (no acting, no auto-promotion) → no one is designated → no bold
     return result
   }
 
@@ -639,10 +649,14 @@ export default function ScheduleGrid({
                                             rows.push([s])
                                           }
                                         }
-                                        return rows.map((row, rowIdx) => (
+                                        return rows.map((row) => {
+                                          // Bold only when this row contains the designated commander
+                                          // (acting OR auto-promoted real commander). NOT just by row position.
+                                          const isCommanderRow = row.some(s => s.is_designated_commander)
+                                          return (
                                           <div
                                             key={row[0].id}
-                                            className={`text-xs leading-snug flex items-center justify-center flex-wrap gap-x-0.5 ${rowIdx === 0 ? 'font-bold' : ''}`}
+                                            className={`text-xs leading-snug flex items-center justify-center flex-wrap gap-x-0.5 ${isCommanderRow ? 'font-bold' : ''}`}
                                           >
                                             {row.map((s, si) => (
                                               <span key={s.id} className="flex items-center gap-0.5">
@@ -688,7 +702,8 @@ export default function ScheduleGrid({
                                               </button>
                                             )}
                                           </div>
-                                        ))
+                                          )
+                                        })
                                       })()}
                                       {task.notes && task.notes !== 'מחלקה 3' && (
                                         <div className="text-[10px] font-semibold mt-0.5 border-t border-current/20 pt-0.5">{task.notes}</div>
