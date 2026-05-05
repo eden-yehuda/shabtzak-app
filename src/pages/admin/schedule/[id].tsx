@@ -331,13 +331,13 @@ export default function EditSchedule() {
     if (!task) return
     const oldEnd = task.end_datetime
     const newEnd = new Date(oldEnd.getTime() + endHourDelta * 3_600_000)
-    // Prevent end ≤ start (must keep at least 1h)
-    if (newEnd.getTime() - task.start_datetime.getTime() < 3_600_000) return
+    // Minimum task length: 30 minutes
+    if (newEnd.getTime() - task.start_datetime.getTime() < 30 * 60_000) return
     try {
       await updateDoc(doc(db, 'tasks', taskId), { end_datetime: newEnd })
       await touchSchedule()
       pushUndo({
-        label: 'שינוי שעת סיום',
+        label: 'שינוי אורך משימה',
         undo: async () => {
           await updateDoc(doc(db, 'tasks', taskId), { end_datetime: Timestamp.fromDate(oldEnd) })
           await touchSchedule()

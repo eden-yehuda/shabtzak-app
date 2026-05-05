@@ -53,6 +53,12 @@ function formatHour(h: number): string {
   return String(h).padStart(2, '0') + ':00'
 }
 
+function formatTime(d: Date): string {
+  const h = String(d.getHours()).padStart(2, '0')
+  const m = String(d.getMinutes()).padStart(2, '0')
+  return `${h}:${m}`
+}
+
 function formatDate(d: Date) {
   const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
   return `${days[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
@@ -92,40 +98,44 @@ export default function ScheduleGrid({
   const [now, setNow] = useState(() => new Date())
   const [pairingCandidate, setPairingCandidate] = useState<{ taskId: string; soldierId: string } | null>(null)
 
-  // Drag-to-resize state. ROW_HEIGHT_PX matches the table row height (h-8 = 32px in Tailwind).
+  // Drag-to-resize. Row height = 32px (h-8). Snap to 0.5h → 16px per snap unit.
   const ROW_HEIGHT_PX = 32
+  const SNAP_PX = ROW_HEIGHT_PX / 2 // 16px = half hour
   const [drag, setDrag] = useState<{
     taskId: string
-    edge: 'top' | 'bottom'
     startY: number
-    deltaHours: number
+    deltaHalfHours: number  // in 0.5h units (1 = 30 min, 2 = 60 min)
   } | null>(null)
 
   useEffect(() => {
     if (!drag) return
-    function onMove(ev: MouseEvent) {
+    function onMove(ev: MouseEvent | TouchEvent) {
       if (!drag) return
-      const dy = ev.clientY - drag.startY
-      const delta = Math.round(dy / ROW_HEIGHT_PX)
-      if (delta !== drag.deltaHours) {
-        setDrag({ ...drag, deltaHours: delta })
+      const clientY = 'touches' in ev ? ev.touches[0]?.clientY ?? drag.startY : ev.clientY
+      const dy = clientY - drag.startY
+      const delta = Math.round(dy / SNAP_PX)
+      if (delta !== drag.deltaHalfHours) {
+        setDrag({ ...drag, deltaHalfHours: delta })
       }
     }
     function onUp() {
       if (!drag) return
-      const { taskId, edge, deltaHours } = drag
+      const { taskId, deltaHalfHours } = drag
       setDrag(null)
-      if (deltaHours === 0) return
-      if (edge === 'top' && onResizeTaskStart) onResizeTaskStart(taskId, deltaHours)
-      else if (edge === 'bottom' && onResizeTask) onResizeTask(taskId, deltaHours)
+      if (deltaHalfHours === 0 || !onResizeTask) return
+      onResizeTask(taskId, deltaHalfHours * 0.5) // pass hours (e.g. 0.5, -1, 1.5)
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
+    window.addEventListener('touchmove', onMove)
+    window.addEventListener('touchend', onUp)
     return () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('touchmove', onMove)
+      window.removeEventListener('touchend', onUp)
     }
-  }, [drag, onResizeTask, onResizeTaskStart])
+  }, [drag, onResizeTask, SNAP_PX])
 
   const todayStr = useMemo(() => isoDate(new Date()), [])
 
@@ -366,7 +376,8 @@ export default function ScheduleGrid({
           covered[col] = new Set()
           for (const task of dayTasks.filter(t => t.task_type === col)) {
             const rowStart = hourToRowIndex(task.start_datetime.getHours())
-            const durationHours = Math.max(1, Math.round(
+            // Round UP so half-hour tasks still get a visible row
+            const durationHours = Math.max(1, Math.ceil(
               (task.end_datetime.getTime() - task.start_datetime.getTime()) / 3600000
             ))
             taskAtRow[col][rowStart] = task
@@ -604,11 +615,11 @@ export default function ScheduleGrid({
                           // always compute duration from actual start/end times.
                           const durationHours = (rowIndex === 0 && overflowRowSpan[col] !== undefined)
                             ? overflowRowSpan[col]
-                            : Math.max(1, Math.round(
+                            : Math.max(1, Math.ceil(
                                 (task.end_datetime.getTime() - task.start_datetime.getTime()) / 3600000
                               ))
                           const rowSpan = Math.min(durationHours, HOURS_PER_DAY - rowIndex)
-                          const timeLabel = task.time_display ?? `${formatHour(task.start_datetime.getHours())}–${formatHour(task.end_datetime.getHours())}`
+                          const timeLabel = task.time_display ?? `${formatTime(task.start_datetime)}–${formatTime(task.end_datetime)}`
                           const assigned = assignedFor(task)
 
                           // In soldier-facing view: don't filter individual tasks here —
@@ -658,43 +669,34 @@ export default function ScheduleGrid({
                                   <div className="border-t-2 border-dashed border-red-400 opacity-50" />
                                 </div>
                               )}
-                              {/* Live drag preview — show pseudo new bounds during drag */}
-                              {drag?.taskId === task.id && drag.deltaHours !== 0 && (
-                                <div className="absolute inset-x-1 top-1 bottom-1 pointer-events-none z-30 rounded-md border-2 border-dashed border-blue-500 bg-blue-100/40 flex items-center justify-center text-xs font-bold text-blue-800">
-                                  {drag.edge === 'top'
-                                    ? `התחלה ${drag.deltaHours > 0 ? '+' : ''}${drag.deltaHours}ש`
-                                    : `סיום ${drag.deltaHours > 0 ? '+' : ''}${drag.deltaHours}ש`}
+                              {/* Live drag preview */}
+                              {drag?.taskId === task.id && drag.deltaHalfHours !== 0 && (
+                                <div className="absolute inset-x-1 top-1 bottom-1 pointer-events-none z-30 rounded-md border-2 border-dashed border-blue-500 bg-blue-100/50 flex items-center justify-center text-xs font-bold text-blue-800">
+                                  {drag.deltaHalfHours > 0 ? '+' : ''}{(drag.deltaHalfHours * 0.5).toFixed(1)}ש
                                 </div>
                               )}
                               <div
                                 className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition relative ${cardExtraClass}`}
                                 style={cardStyle}
                               >
-                                {/* Drag handles — only in builder mode when this task is selected */}
-                                {builderMode && isSelected && onResizeTaskStart && (
-                                  <div
-                                    onMouseDown={e => {
-                                      e.stopPropagation()
-                                      e.preventDefault()
-                                      setDrag({ taskId: task.id, edge: 'top', startY: e.clientY, deltaHours: 0 })
-                                    }}
-                                    title="גרור למעלה/למטה כדי לשנות את שעת ההתחלה"
-                                    className="absolute top-0 inset-x-0 h-3 cursor-ns-resize bg-emerald-500/40 hover:bg-emerald-500/70 z-10 flex items-center justify-center"
-                                  >
-                                    <span className="text-white text-[10px] font-bold leading-none">▲ התחלה</span>
-                                  </div>
-                                )}
+                                {/* Single resize handle at the bottom — drag to change end time (snaps to 30 min) */}
                                 {builderMode && isSelected && onResizeTask && (
                                   <div
                                     onMouseDown={e => {
                                       e.stopPropagation()
                                       e.preventDefault()
-                                      setDrag({ taskId: task.id, edge: 'bottom', startY: e.clientY, deltaHours: 0 })
+                                      setDrag({ taskId: task.id, startY: e.clientY, deltaHalfHours: 0 })
                                     }}
-                                    title="גרור למעלה/למטה כדי לשנות את שעת הסיום"
-                                    className="absolute bottom-0 inset-x-0 h-3 cursor-ns-resize bg-orange-500/40 hover:bg-orange-500/70 z-10 flex items-center justify-center"
+                                    onTouchStart={e => {
+                                      e.stopPropagation()
+                                      const t = e.touches[0]
+                                      if (!t) return
+                                      setDrag({ taskId: task.id, startY: t.clientY, deltaHalfHours: 0 })
+                                    }}
+                                    title="גרור למעלה לקיצור / למטה להארכה (קפיצות של חצי שעה)"
+                                    className="absolute bottom-0 inset-x-0 h-4 cursor-ns-resize bg-orange-500 hover:bg-orange-600 z-10 flex items-center justify-center rounded-b select-none"
                                   >
-                                    <span className="text-white text-[10px] font-bold leading-none">סיום ▼</span>
+                                    <span className="text-white text-[10px] font-bold leading-none">⇅ גרור</span>
                                   </div>
                                 )}
                                 <div className="space-y-0.5">
