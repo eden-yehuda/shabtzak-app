@@ -19,6 +19,7 @@ interface Props {
   onToggleActingCommander?: (taskId: string, soldierId: string, makeCommander: boolean) => void
   onMoveTask?: (taskId: string, hourDelta: number) => void
   onResizeTask?: (taskId: string, endHourDelta: number) => void
+  onResizeTaskStart?: (taskId: string, startHourDelta: number) => void
   onDeleteTask?: (taskId: string) => void
   onMoveTaskToSlot?: (taskId: string, date: string, hour: number) => void
   onCreateTaskAtSlot?: (date: string, hour: number, taskType: string) => void
@@ -75,7 +76,7 @@ function addDays(dateStr: string, n: number): string {
 export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
   currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, showAllDays, onSelectTask, onRemoveSoldier, onEditAssignmentNote, onToggleActingCommander,
-  onMoveTask, onResizeTask, onDeleteTask, onMoveTaskToSlot, onCreateTaskAtSlot,
+  onMoveTask, onResizeTask, onResizeTaskStart, onDeleteTask, onMoveTaskToSlot, onCreateTaskAtSlot,
   onPairSoldiers, onUnpairSoldier, onDeleteColumn,
 }: Props) {
   const DAY_START_HOUR = dayStartHour
@@ -608,7 +609,7 @@ export default function ScheduleGrid({
                             : null
 
                           // Edit buttons — shown inside the selected card in builderMode
-                          const showEditBar = builderMode && isSelected && (onMoveTask || onResizeTask || onDeleteTask)
+                          const showEditBar = builderMode && isSelected && (onMoveTask || onResizeTask || onResizeTaskStart || onDeleteTask)
 
                           return (
                             <td
@@ -738,18 +739,32 @@ export default function ScheduleGrid({
                                         >↓+1ש</button>
                                       </>
                                     )}
+                                    {onResizeTaskStart && (
+                                      <>
+                                        <button
+                                          title="האריך התחלה שעה אחת קודם"
+                                          onClick={() => onResizeTaskStart(task.id, -1)}
+                                          className="text-[10px] bg-white/80 border border-emerald-200 rounded px-1 py-0.5 hover:bg-emerald-50 text-emerald-700"
+                                        >התחלה −1ש</button>
+                                        <button
+                                          title="קצר התחלה שעה אחת"
+                                          onClick={() => onResizeTaskStart(task.id, 1)}
+                                          className="text-[10px] bg-white/80 border border-emerald-200 rounded px-1 py-0.5 hover:bg-emerald-50 text-emerald-700"
+                                        >התחלה +1ש</button>
+                                      </>
+                                    )}
                                     {onResizeTask && (
                                       <>
                                         <button
                                           title="קצר סיום שעה אחת"
                                           onClick={() => onResizeTask(task.id, -1)}
-                                          className="text-[10px] bg-white/80 border border-slate-200 rounded px-1 py-0.5 hover:bg-slate-50 text-slate-700"
-                                        >◀−1</button>
+                                          className="text-[10px] bg-white/80 border border-orange-200 rounded px-1 py-0.5 hover:bg-orange-50 text-orange-700"
+                                        >סיום −1ש</button>
                                         <button
                                           title="האריך סיום שעה אחת"
                                           onClick={() => onResizeTask(task.id, 1)}
-                                          className="text-[10px] bg-white/80 border border-slate-200 rounded px-1 py-0.5 hover:bg-slate-50 text-slate-700"
-                                        >▶+1</button>
+                                          className="text-[10px] bg-white/80 border border-orange-200 rounded px-1 py-0.5 hover:bg-orange-50 text-orange-700"
+                                        >סיום +1ש</button>
                                       </>
                                     )}
                                     {onDeleteTask && (

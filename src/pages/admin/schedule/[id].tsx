@@ -306,23 +306,64 @@ export default function EditSchedule() {
   async function handleMoveTask(taskId: string, hourDelta: number) {
     const task = tasks.find(t => t.id === taskId)
     if (!task) return
-    const newStart = new Date(task.start_datetime.getTime() + hourDelta * 3_600_000)
-    const newEnd = new Date(task.end_datetime.getTime() + hourDelta * 3_600_000)
+    const oldStart = task.start_datetime
+    const oldEnd = task.end_datetime
+    const newStart = new Date(oldStart.getTime() + hourDelta * 3_600_000)
+    const newEnd = new Date(oldEnd.getTime() + hourDelta * 3_600_000)
     try {
       await updateDoc(doc(db, 'tasks', taskId), { start_datetime: newStart, end_datetime: newEnd })
       await touchSchedule()
+      pushUndo({
+        label: 'הזזת משימה',
+        undo: async () => {
+          await updateDoc(doc(db, 'tasks', taskId), {
+            start_datetime: Timestamp.fromDate(oldStart),
+            end_datetime: Timestamp.fromDate(oldEnd),
+          })
+          await touchSchedule()
+        },
+      })
     } catch { alert('שגיאה בעדכון שעת משימה') }
   }
 
   async function handleResizeTask(taskId: string, endHourDelta: number) {
     const task = tasks.find(t => t.id === taskId)
     if (!task) return
-    const newEnd = new Date(task.end_datetime.getTime() + endHourDelta * 3_600_000)
-    if (newEnd <= task.start_datetime) return
+    const oldEnd = task.end_datetime
+    const newEnd = new Date(oldEnd.getTime() + endHourDelta * 3_600_000)
+    // Prevent end ≤ start (must keep at least 1h)
+    if (newEnd.getTime() - task.start_datetime.getTime() < 3_600_000) return
     try {
       await updateDoc(doc(db, 'tasks', taskId), { end_datetime: newEnd })
       await touchSchedule()
+      pushUndo({
+        label: 'שינוי שעת סיום',
+        undo: async () => {
+          await updateDoc(doc(db, 'tasks', taskId), { end_datetime: Timestamp.fromDate(oldEnd) })
+          await touchSchedule()
+        },
+      })
     } catch { alert('שגיאה בשינוי אורך משימה') }
+  }
+
+  async function handleResizeTaskStart(taskId: string, startHourDelta: number) {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) return
+    const oldStart = task.start_datetime
+    const newStart = new Date(oldStart.getTime() + startHourDelta * 3_600_000)
+    // Prevent start ≥ end (must keep at least 1h)
+    if (task.end_datetime.getTime() - newStart.getTime() < 3_600_000) return
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), { start_datetime: newStart })
+      await touchSchedule()
+      pushUndo({
+        label: 'שינוי שעת התחלה',
+        undo: async () => {
+          await updateDoc(doc(db, 'tasks', taskId), { start_datetime: Timestamp.fromDate(oldStart) })
+          await touchSchedule()
+        },
+      })
+    } catch { alert('שגיאה בשינוי שעת התחלה') }
   }
 
   async function handleDeleteTask(taskId: string) {
@@ -741,6 +782,9 @@ export default function EditSchedule() {
                   } catch { alert('עריכת הערה נכשלה') }
                 }}
                 onDeleteTask={handleDeleteTask}
+                onMoveTask={handleMoveTask}
+                onResizeTask={handleResizeTask}
+                onResizeTaskStart={handleResizeTaskStart}
                 onMoveTaskToSlot={handleMoveTaskToSlot}
                 onCreateTaskAtSlot={handleCreateTaskAtSlot}
                 onDeleteColumn={handleDeleteColumn}
