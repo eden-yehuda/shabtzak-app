@@ -92,6 +92,41 @@ export default function ScheduleGrid({
   const [now, setNow] = useState(() => new Date())
   const [pairingCandidate, setPairingCandidate] = useState<{ taskId: string; soldierId: string } | null>(null)
 
+  // Drag-to-resize state. ROW_HEIGHT_PX matches the table row height (h-8 = 32px in Tailwind).
+  const ROW_HEIGHT_PX = 32
+  const [drag, setDrag] = useState<{
+    taskId: string
+    edge: 'top' | 'bottom'
+    startY: number
+    deltaHours: number
+  } | null>(null)
+
+  useEffect(() => {
+    if (!drag) return
+    function onMove(ev: MouseEvent) {
+      if (!drag) return
+      const dy = ev.clientY - drag.startY
+      const delta = Math.round(dy / ROW_HEIGHT_PX)
+      if (delta !== drag.deltaHours) {
+        setDrag({ ...drag, deltaHours: delta })
+      }
+    }
+    function onUp() {
+      if (!drag) return
+      const { taskId, edge, deltaHours } = drag
+      setDrag(null)
+      if (deltaHours === 0) return
+      if (edge === 'top' && onResizeTaskStart) onResizeTaskStart(taskId, deltaHours)
+      else if (edge === 'bottom' && onResizeTask) onResizeTask(taskId, deltaHours)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [drag, onResizeTask, onResizeTaskStart])
+
   const todayStr = useMemo(() => isoDate(new Date()), [])
 
   // Military day: if current hour is before DAY_START_HOUR, the "now" belongs to the previous calendar day
@@ -623,10 +658,45 @@ export default function ScheduleGrid({
                                   <div className="border-t-2 border-dashed border-red-400 opacity-50" />
                                 </div>
                               )}
+                              {/* Live drag preview — show pseudo new bounds during drag */}
+                              {drag?.taskId === task.id && drag.deltaHours !== 0 && (
+                                <div className="absolute inset-x-1 top-1 bottom-1 pointer-events-none z-30 rounded-md border-2 border-dashed border-blue-500 bg-blue-100/40 flex items-center justify-center text-xs font-bold text-blue-800">
+                                  {drag.edge === 'top'
+                                    ? `התחלה ${drag.deltaHours > 0 ? '+' : ''}${drag.deltaHours}ש`
+                                    : `סיום ${drag.deltaHours > 0 ? '+' : ''}${drag.deltaHours}ש`}
+                                </div>
+                              )}
                               <div
-                                className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition ${cardExtraClass}`}
+                                className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition relative ${cardExtraClass}`}
                                 style={cardStyle}
                               >
+                                {/* Drag handles — only in builder mode when this task is selected */}
+                                {builderMode && isSelected && onResizeTaskStart && (
+                                  <div
+                                    onMouseDown={e => {
+                                      e.stopPropagation()
+                                      e.preventDefault()
+                                      setDrag({ taskId: task.id, edge: 'top', startY: e.clientY, deltaHours: 0 })
+                                    }}
+                                    title="גרור למעלה/למטה כדי לשנות את שעת ההתחלה"
+                                    className="absolute top-0 inset-x-0 h-3 cursor-ns-resize bg-emerald-500/40 hover:bg-emerald-500/70 z-10 flex items-center justify-center"
+                                  >
+                                    <span className="text-white text-[10px] font-bold leading-none">▲ התחלה</span>
+                                  </div>
+                                )}
+                                {builderMode && isSelected && onResizeTask && (
+                                  <div
+                                    onMouseDown={e => {
+                                      e.stopPropagation()
+                                      e.preventDefault()
+                                      setDrag({ taskId: task.id, edge: 'bottom', startY: e.clientY, deltaHours: 0 })
+                                    }}
+                                    title="גרור למעלה/למטה כדי לשנות את שעת הסיום"
+                                    className="absolute bottom-0 inset-x-0 h-3 cursor-ns-resize bg-orange-500/40 hover:bg-orange-500/70 z-10 flex items-center justify-center"
+                                  >
+                                    <span className="text-white text-[10px] font-bold leading-none">סיום ▼</span>
+                                  </div>
+                                )}
                                 <div className="space-y-0.5">
                                   <div className="text-[9px] mb-0.5 opacity-60" dir="ltr">{timeLabel}</div>
                                   {isMachlaket3 ? (
@@ -719,54 +789,12 @@ export default function ScheduleGrid({
                                   )}
                                 </div>
 
-                                {/* Edit action bar — visible only when task is selected in builder mode */}
+                                {/* Edit action bar — only delete button (resize is via drag handles) */}
                                 {showEditBar && (
                                   <div
                                     className="flex gap-0.5 justify-center mt-1 pt-1 border-t border-sky-200 flex-wrap"
                                     onClick={e => e.stopPropagation()}
                                   >
-                                    {onMoveTask && (
-                                      <>
-                                        <button
-                                          title="הזז שעה אחת קודם"
-                                          onClick={() => onMoveTask(task.id, -1)}
-                                          className="text-[10px] bg-white/80 border border-sky-200 rounded px-1 py-0.5 hover:bg-sky-50 text-sky-800"
-                                        >↑−1ש</button>
-                                        <button
-                                          title="הזז שעה אחת קדימה"
-                                          onClick={() => onMoveTask(task.id, 1)}
-                                          className="text-[10px] bg-white/80 border border-sky-200 rounded px-1 py-0.5 hover:bg-sky-50 text-sky-800"
-                                        >↓+1ש</button>
-                                      </>
-                                    )}
-                                    {onResizeTaskStart && (
-                                      <>
-                                        <button
-                                          title="האריך התחלה שעה אחת קודם"
-                                          onClick={() => onResizeTaskStart(task.id, -1)}
-                                          className="text-[10px] bg-white/80 border border-emerald-200 rounded px-1 py-0.5 hover:bg-emerald-50 text-emerald-700"
-                                        >התחלה −1ש</button>
-                                        <button
-                                          title="קצר התחלה שעה אחת"
-                                          onClick={() => onResizeTaskStart(task.id, 1)}
-                                          className="text-[10px] bg-white/80 border border-emerald-200 rounded px-1 py-0.5 hover:bg-emerald-50 text-emerald-700"
-                                        >התחלה +1ש</button>
-                                      </>
-                                    )}
-                                    {onResizeTask && (
-                                      <>
-                                        <button
-                                          title="קצר סיום שעה אחת"
-                                          onClick={() => onResizeTask(task.id, -1)}
-                                          className="text-[10px] bg-white/80 border border-orange-200 rounded px-1 py-0.5 hover:bg-orange-50 text-orange-700"
-                                        >סיום −1ש</button>
-                                        <button
-                                          title="האריך סיום שעה אחת"
-                                          onClick={() => onResizeTask(task.id, 1)}
-                                          className="text-[10px] bg-white/80 border border-orange-200 rounded px-1 py-0.5 hover:bg-orange-50 text-orange-700"
-                                        >סיום +1ש</button>
-                                      </>
-                                    )}
                                     {onDeleteTask && (
                                       <button
                                         title="מחק משימה"
