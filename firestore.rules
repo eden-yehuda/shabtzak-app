@@ -1,24 +1,50 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Admins (authenticated users) can read and write everything
+
+    // ─── Default: authenticated users (= admins) can read/write everything ─────
+    // Anyone with a valid Firebase Auth session is treated as admin.
+    // (To restrict further, list specific UIDs and check request.auth.uid in [...].)
     match /{document=**} {
       allow read, write: if request.auth != null;
     }
 
-    // Public read for core collections
-    match /soldiers/{id} { allow read: if true; }
-    match /schedules/{id} { allow read: if true; }
-    match /tasks/{id} { allow read: if true; }
-    match /assignments/{id} { allow read: if true; }
-    match /task_types/{id} { allow read: if true; }
+    // ─── Public read for core collections (soldier-facing app uses no auth) ───
+    match /soldiers/{id}            { allow read: if true; }
+    match /schedules/{id}           { allow read: if true; }
+    match /tasks/{id}               { allow read: if true; }
+    match /assignments/{id}         { allow read: if true; }
+    match /task_types/{id}          { allow read: if true; }
+    match /published_versions/{id}  { allow read: if true; }
+    match /conditions/{id}          { allow read: if true; }
 
-    // Soldiers can create leave requests (unauthenticated), but not update status
+    // ─── Leave requests (soldiers submit) ────────────────────────────────────
+    // Public can CREATE only pending, non-final requests.
+    // Direct creation of approved/final requests is BLOCKED — admin must approve.
     match /leave_requests/{id} {
       allow read: if true;
-      allow create: if true;
-      allow update: if request.auth != null;
-      allow delete: if request.auth != null;
+      allow create: if request.resource.data.status == 'pending'
+                 && request.resource.data.is_final == false;
+      // Updates and deletes require admin authentication
+      allow update, delete: if request.auth != null;
+    }
+
+    // ─── Inquiries (soldiers send messages to admin) ──────────────────────────
+    // Public can create new inquiries (must start with read=false).
+    // Only admin can read/update/delete.
+    match /inquiries/{id} {
+      allow read: if request.auth != null;
+      allow create: if request.resource.data.read == false;
+      allow update, delete: if request.auth != null;
+    }
+
+    // ─── Leave versions / settings — admin only ──────────────────────────────
+    match /leave_versions/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /settings/{id} {
+      allow read: if true;
+      allow write: if request.auth != null;
     }
   }
 }

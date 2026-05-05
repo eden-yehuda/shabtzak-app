@@ -45,13 +45,23 @@ export default function HomePage() {
     })
   }, [])
 
-  // Load saved soldier from localStorage
+  // Load saved soldier + filter preferences from localStorage
   useEffect(() => {
-    const savedId = typeof window !== 'undefined' ? localStorage.getItem('soldierId') : null
-    const savedName = typeof window !== 'undefined' ? localStorage.getItem('soldierName') : null
+    if (typeof window === 'undefined') return
+    const savedId = localStorage.getItem('soldierId')
+    const savedName = localStorage.getItem('soldierName')
+    const savedMyTasksOnly = localStorage.getItem('myTasksOnly') === 'true'
     if (savedId) setSelectedSoldierId(savedId)
     if (savedName) setSearch(savedName)
+    if (savedMyTasksOnly) setMyTasksOnly(true)
   }, [])
+
+  // Persist myTasksOnly whenever it changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (myTasksOnly) localStorage.setItem('myTasksOnly', 'true')
+    else localStorage.removeItem('myTasksOnly')
+  }, [myTasksOnly])
 
   // Load published schedules sorted by start_datetime desc
   useEffect(() => {
@@ -108,6 +118,7 @@ export default function HomePage() {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('soldierId')
       localStorage.removeItem('soldierName')
+      localStorage.removeItem('myTasksOnly')
     }
   }
 
