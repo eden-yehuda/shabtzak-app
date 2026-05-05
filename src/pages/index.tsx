@@ -415,16 +415,16 @@ function AllLeavesModal({ soldiers, finalLeave, onClose }: {
             dates.length === 0 || approvedFuture.length === 0
               ? <p className="text-slate-400 text-center py-8">אין יציאות מאושרות מהיום והלאה</p>
               : (
-                <table className="text-sm border-collapse" style={{ minWidth: 'max-content' }}>
+                <table className="text-sm border-collapse border-separate" style={{ minWidth: 'max-content', borderSpacing: 0 }}>
                   <thead>
-                    <tr className="bg-slate-50 sticky top-0 z-10">
-                      <th className="px-3 py-2 font-semibold sticky right-0 bg-slate-50 border-b border-l border-slate-200 text-right">שם</th>
+                    <tr>
+                      <th className="px-3 py-2 font-semibold sticky top-0 right-0 bg-slate-100 border-b border-l border-slate-200 text-right z-30 shadow-sm">שם</th>
                       {dates.map(d => (
-                        <th key={d} className="px-2 py-2 text-center font-semibold border-b border-slate-200 min-w-[52px] text-xs">
+                        <th key={d} className="px-2 py-2 text-center font-semibold sticky top-0 bg-slate-100 border-b border-slate-200 min-w-[52px] text-xs z-20 shadow-sm">
                           {dayLabel(d)}
                         </th>
                       ))}
-                      <th className="px-3 py-2 text-center font-semibold border-b border-slate-200 sticky left-0 bg-slate-50">סה"כ</th>
+                      <th className="px-3 py-2 text-center font-semibold sticky top-0 left-0 bg-slate-100 border-b border-slate-200 z-30 shadow-sm">סה"כ</th>
                     </tr>
                   </thead>
                   <tbody>

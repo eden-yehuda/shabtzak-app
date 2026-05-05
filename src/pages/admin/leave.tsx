@@ -601,20 +601,20 @@ export default function AdminLeavePage() {
         <span className="text-slate-400">לחיצה על ✓ מבטלת אישור</span>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="text-sm border-collapse min-w-full">
+      <div className="overflow-auto max-h-[70vh]">
+        <table className="text-sm border-separate min-w-full" style={{ borderSpacing: 0 }}>
           <thead>
-            <tr className="text-right bg-slate-50">
-              <th className="px-3 py-2 sticky right-0 bg-slate-50 z-10">שם</th>
+            <tr className="text-right">
+              <th className="px-3 py-2 sticky top-0 right-0 bg-slate-100 z-30 shadow-sm border-b border-l border-slate-200">שם</th>
               {dates.map(d => (
-                <th key={d} className="px-1 py-2 text-center min-w-[56px]">
+                <th key={d} className="px-1 py-2 text-center min-w-[56px] sticky top-0 bg-slate-100 z-20 shadow-sm border-b border-slate-200">
                   <div>{dayLabel(d)}</div>
                   {countPending(d) > 0 && (
                     <div className="text-[10px] text-amber-600 font-semibold">{countPending(d)} בקשות</div>
                   )}
                 </th>
               ))}
-              <th className="px-2 py-2 text-center whitespace-nowrap">ביקש / אושר</th>
+              <th className="px-2 py-2 text-center whitespace-nowrap sticky top-0 left-0 bg-slate-100 z-30 shadow-sm border-b border-slate-200">ביקש / אושר</th>
             </tr>
           </thead>
           <tbody>

@@ -28,7 +28,7 @@ interface Props {
 }
 
 // Visual order right-to-left (RTL)
-const COLUMN_ORDER = ['תרג"ד', 'סיור', 'כ"כ ג', 'כ"כ ב', 'כוננות', 'כ"כ א', 'אחורית', 'ש"ג', 'של"ז', 'תורן רס"פ']
+const COLUMN_ORDER = ['תרג"ד', 'סיור', 'בלת"מ', 'כ"כ ג', 'כ"כ ב', 'כוננות', 'כ"כ א', 'אחורית', 'ש"ג', 'של"ז', 'תורן רס"פ']
 
 // Colors per column type
 const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: string; cardBorder: string; cardText: string; mineBg: string }> = {
@@ -38,6 +38,7 @@ const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: stri
   'כ"כ א':    { headBg: '#516B85', headText: '#fff', cardBg: '#EEF2F7', cardBorder: '#C4D3E3', cardText: '#1E3550', mineBg: '#3A5470' },
   'כ"כ ב':    { headBg: '#40787A', headText: '#fff', cardBg: '#EAF4F4', cardBorder: '#B5D5D5', cardText: '#153A3A', mineBg: '#2E6062' },
   'כ"כ ג':    { headBg: '#4A6878', headText: '#fff', cardBg: '#EBF2F6', cardBorder: '#B8CFDA', cardText: '#162535', mineBg: '#365060' },
+  'בלת"מ':    { headBg: '#4A6878', headText: '#fff', cardBg: '#EBF2F6', cardBorder: '#B8CFDA', cardText: '#162535', mineBg: '#365060' },
   'אחורית':   { headBg: '#7A6652', headText: '#fff', cardBg: '#F4EFE7', cardBorder: '#D8CBBA', cardText: '#3D2E18', mineBg: '#61503E' },
   'ש"ג':      { headBg: '#4A7A5E', headText: '#fff', cardBg: '#EAF3EE', cardBorder: '#B8D5C5', cardText: '#1A3828', mineBg: '#365E48' },
   'של"ז':     { headBg: '#635E88', headText: '#fff', cardBg: '#EDEAF6', cardBorder: '#C5C0DC', cardText: '#2A2448', mineBg: '#4D4870' },
