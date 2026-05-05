@@ -780,16 +780,16 @@ export default function EditSchedule() {
             onAssigned={async (taskId: string, soldierId: string) => {
               await touchSchedule()
               await handleAssigned(taskId, soldierId)
-              // Auto-assign to consecutive כ"כ ג: when a soldier finishes a סיור shift,
-              // assign them to the כ"כ ג shift that STARTS at the moment סיור ends.
+              // Auto-assign to consecutive כ"כ ב: when a soldier finishes a סיור shift,
+              // assign them to the כ"כ ב shift that STARTS at the moment סיור ends.
               const assignedTask = tasks.find(t => t.id === taskId)
               if (assignedTask?.task_type === 'סיור') {
-                const kkkG = tasks.find(t =>
-                  t.task_type === 'כ"כ ג' &&
+                const followup = tasks.find(t =>
+                  t.task_type === 'כ"כ ב' &&
                   t.start_datetime.getTime() === assignedTask.end_datetime.getTime()
                 )
-                if (kkkG && !assignments.some(a => a.task_id === kkkG.id && a.soldier_id === soldierId)) {
-                  await createAssignment(kkkG.id, soldierId)
+                if (followup && !assignments.some(a => a.task_id === followup.id && a.soldier_id === soldierId)) {
+                  await createAssignment(followup.id, soldierId)
                 }
               }
             }}
