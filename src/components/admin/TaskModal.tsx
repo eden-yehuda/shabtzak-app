@@ -7,6 +7,7 @@ interface Props {
   scheduleId: string
   scheduleStart: Date
   scheduleEnd: Date
+  defaultStartHour?: number  // from schedule home_leave_hour — first shift starts here
   onClose: () => void
 }
 
@@ -29,52 +30,88 @@ function dayLabel(dateStr: string) {
   return `${DAY_NAMES[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
 }
 
-export default function TaskModal({ scheduleId, scheduleStart, scheduleEnd, onClose }: Props) {
-  const [taskTypes, setTaskTypes] = useState<TaskType[]>([])
+// ── Built-in task type presets ───────────────────────────────────────────────
+const BUILTIN_TASK_TYPES: Omit<TaskType, 'id'>[] = [
+  { name: 'כוננות',     difficulty: 'hard', color: '', requires_commander: true,  soldiers_required: 8, shift_duration_hours: 8,  is_emphasized: false },
+  { name: 'סיור',       difficulty: 'hard', color: '', requires_commander: true,  soldiers_required: 3, shift_duration_hours: 8,  is_emphasized: false },
+  { name: 'כ"כ א',     difficulty: 'hard', color: '', requires_commander: true,  soldiers_required: 8, shift_duration_hours: 8,  is_emphasized: false },
+  { name: 'התקפי',     difficulty: 'hard', color: '', requires_commander: true,  soldiers_required: 4, shift_duration_hours: 8,  is_emphasized: false },
+  { name: 'כ"כ ב',     difficulty: 'hard', color: '', requires_commander: false, soldiers_required: 8, shift_duration_hours: 8,  is_emphasized: false },
+  { name: 'כ"כ ג',     difficulty: 'hard', color: '', requires_commander: true,  soldiers_required: 4, shift_duration_hours: 8,  is_emphasized: false },
+  { name: 'בלת"מ',     difficulty: 'hard', color: '', requires_commander: false, soldiers_required: 0, shift_duration_hours: 24, is_emphasized: false },
+  { name: 'תורן מטבח', difficulty: 'easy', color: '', requires_commander: false, soldiers_required: 1, shift_duration_hours: 12, is_emphasized: true  },
+  { name: 'תורן רס"פ', difficulty: 'easy', color: '', requires_commander: false, soldiers_required: 1, shift_duration_hours: 12, is_emphasized: true  },
+  { name: 'של"ז',      difficulty: 'easy', color: '', requires_commander: false, soldiers_required: 1, shift_duration_hours: 8,  is_emphasized: true  },
+  { name: 'ש"ג',       difficulty: 'hard', color: '', requires_commander: false, soldiers_required: 2, shift_duration_hours: 8,  is_emphasized: false },
+]
+
+export default function TaskModal({ scheduleId, scheduleStart, scheduleEnd, defaultStartHour, onClose }: Props) {
+  const [firestoreTypes, setFirestoreTypes] = useState<TaskType[]>([])
   const [taskType, setTaskType] = useState('')
+  const [customName, setCustomName] = useState('')  // free-text override for task name
   const [mode, setMode] = useState<'fixed' | 'rotating'>('fixed')
 
   // קבועה
-  const [timesPerDay, setTimesPerDay] = useState(2)
-  const [fixedStartHour, setFixedStartHour] = useState(8)
+  const [timesPerDay, setTimesPerDay] = useState(1)
+  const [fixedStartHour, setFixedStartHour] = useState(defaultStartHour ?? 6)
   const [durationHours, setDurationHours] = useState(8)
 
   // לסירוגין
   const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set())
-  const [rotStart, setRotStart] = useState('08:00')
-  const [rotEnd, setRotEnd] = useState('20:00')
+  const [rotStart, setRotStart] = useState(
+    `${String(defaultStartHour ?? 6).padStart(2, '0')}:00`
+  )
+  const [rotEnd, setRotEnd] = useState('14:00')
 
   // shared
-  const [required, setRequired] = useState(2)
+  const [required, setRequired] = useState(3)
   const [requiresCommander, setRequiresCommander] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const scheduleDays = daysInRange(scheduleStart, scheduleEnd)
 
+  // Merge built-in + Firestore types, dedup by name
+  const allTypes: Omit<TaskType, 'id'>[] = [
+    ...BUILTIN_TASK_TYPES,
+    ...firestoreTypes.filter(ft => !BUILTIN_TASK_TYPES.some(b => b.name === ft.name)),
+  ]
+
   useEffect(() => {
     getDocs(taskTypesRef()).then(snap => {
-      setTaskTypes(snap.docs.map(d => ({ id: d.id, ...d.data() } as TaskType)))
+      setFirestoreTypes(snap.docs.map(d => ({ id: d.id, ...d.data() } as TaskType)))
     })
   }, [])
+
+  // Sync fixedStartHour default when prop changes (e.g. schedule loaded async)
+  useEffect(() => {
+    if (defaultStartHour != null) {
+      setFixedStartHour(defaultStartHour)
+      setRotStart(`${String(defaultStartHour).padStart(2, '0')}:00`)
+    }
+  }, [defaultStartHour])
 
   function toggleDay(d: string) {
     setSelectedDays(prev => {
       const next = new Set(prev)
       if (next.has(d)) next.delete(d)
-    else next.add(d)
+      else next.add(d)
       return next
     })
   }
 
   function onTypeChange(name: string) {
-    const tt = taskTypes.find(t => t.name === name)
+    const tt = allTypes.find(t => t.name === name)
     setTaskType(name)
+    setCustomName('')  // reset custom name when type changes
     if (tt) {
       setRequiresCommander(tt.requires_commander ?? false)
       setRequired(tt.soldiers_required ?? 2)
       setDurationHours(tt.shift_duration_hours ?? 8)
     }
   }
+
+  // Effective task name: custom name if provided, else task type
+  const effectiveName = customName.trim() || taskType
 
   async function save() {
     if (!taskType) return
@@ -88,7 +125,7 @@ export default function TaskModal({ scheduleId, scheduleStart, scheduleEnd, onCl
             const start = new Date(startMs)
             const end = new Date(startMs + durationHours * 3600000)
             await createTask({
-              schedule_id: scheduleId, task_name: taskType, task_type: taskType,
+              schedule_id: scheduleId, task_name: effectiveName, task_type: taskType,
               difficulty: 'hard', start_datetime: start, end_datetime: end,
               required_people_count: required, requires_commander: requiresCommander, notes: '',
             })
@@ -102,7 +139,7 @@ export default function TaskModal({ scheduleId, scheduleStart, scheduleEnd, onCl
           const end = new Date(`${dayStr}T${rotEnd}`)
           if (eh * 60 + em <= sh * 60 + sm) end.setDate(end.getDate() + 1)
           await createTask({
-            schedule_id: scheduleId, task_name: taskType, task_type: taskType,
+            schedule_id: scheduleId, task_name: effectiveName, task_type: taskType,
             difficulty: 'hard', start_datetime: start, end_datetime: end,
             required_people_count: required, requires_commander: requiresCommander, notes: '',
           })
@@ -130,13 +167,28 @@ export default function TaskModal({ scheduleId, scheduleStart, scheduleEnd, onCl
         </div>
 
         {/* Task type */}
-        <div className="mb-4">
+        <div className="mb-3">
           <label className="block text-sm font-semibold text-slate-700 mb-1.5">סוג משימה</label>
           <select value={taskType} onChange={e => onTypeChange(e.target.value)}
             className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-navy">
             <option value="">בחר סוג...</option>
-            {taskTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+            {allTypes.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
           </select>
+        </div>
+
+        {/* Custom name override */}
+        <div className="mb-4">
+          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+            שם משימה
+            <span className="text-xs font-normal text-slate-400 mr-1">(ריק = שם הסוג)</span>
+          </label>
+          <input
+            type="text"
+            value={customName}
+            onChange={e => setCustomName(e.target.value)}
+            placeholder={taskType || 'שם חופשי...'}
+            className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-navy"
+          />
         </div>
 
         {/* קבועה / לסירוגין */}
@@ -176,7 +228,7 @@ export default function TaskModal({ scheduleId, scheduleStart, scheduleEnd, onCl
               <label className="text-sm text-slate-600 w-36">משך כל משמרת</label>
               <select value={durationHours} onChange={e => setDurationHours(Number(e.target.value))}
                 className="w-28 border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
-                {[4, 6, 8, 10, 12, 24].map(h => (
+                {[2, 4, 6, 8, 10, 12, 24].map(h => (
                   <option key={h} value={h}>{h} שעות</option>
                 ))}
               </select>
@@ -223,7 +275,7 @@ export default function TaskModal({ scheduleId, scheduleStart, scheduleEnd, onCl
         <div className="flex items-center gap-4 mb-4">
           <div className="flex items-center gap-2">
             <label className="text-sm text-slate-600">כמות נדרשת</label>
-            <input type="number" min={1} max={10} value={required}
+            <input type="number" min={0} max={20} value={required}
               onChange={e => setRequired(Number(e.target.value))}
               className="w-16 border border-slate-300 rounded-lg px-2 py-1.5 text-sm text-center" />
             <span className="text-sm text-slate-500">חיילים</span>
@@ -242,7 +294,7 @@ export default function TaskModal({ scheduleId, scheduleStart, scheduleEnd, onCl
           </button>
           <button type="button" onClick={save} disabled={!canSave || saving}
             className="flex-1 bg-navy text-white rounded-xl py-2.5 font-semibold text-sm disabled:opacity-40">
-            {saving ? `יוצר... (${totalTasks} משימות)` : `צור ${totalTasks} משימות`}
+            {saving ? `יוצר...` : `צור ${totalTasks} משימות`}
           </button>
         </div>
       </div>

@@ -40,6 +40,7 @@ export default function EditSchedule() {
 
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
   const [showErrorPanel, setShowErrorPanel] = useState(false)
+  const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null)
 
   // Undo stack: each entry is an inverse-action that reverts the last change
   type UndoAction = { label: string; undo: () => Promise<void> }
@@ -303,6 +304,63 @@ export default function EditSchedule() {
     await updateDoc(doc(db, 'schedules', scheduleId), { updated_at: serverTimestamp() })
   }
 
+  async function handleRenameTask(taskId: string, newName: string) {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task || !newName.trim()) return
+    const oldName = task.task_name
+    if (newName.trim() === oldName) return
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), { task_name: newName.trim() })
+      await touchSchedule()
+      pushUndo({
+        label: 'שינוי שם משימה',
+        undo: async () => {
+          await updateDoc(doc(db, 'tasks', taskId), { task_name: oldName })
+          await touchSchedule()
+        },
+      })
+    } catch { alert('שגיאה בשינוי שם משימה') }
+  }
+
+  async function handleUpdateSwapHour(newHour: number) {
+    if (!scheduleId || !schedule) return
+    const oldHour = schedule.home_leave_hour ?? schedule.day_start_hour ?? 6
+    try {
+      await updateDoc(doc(db, 'schedules', scheduleId), { home_leave_hour: newHour, updated_at: serverTimestamp() })
+      // Offer to shift all tasks by the delta
+      const delta = newHour - oldHour
+      if (delta !== 0 && tasks.length > 0) {
+        const shouldShift = confirm(
+          `שעת החילופים שונתה ב-${delta > 0 ? '+' : ''}${delta} שעות.\nלהזיז את כל המשימות בהתאם?`
+        )
+        if (shouldShift) {
+          const oldTimes = tasks.map(t => ({ id: t.id, start: t.start_datetime, end: t.end_datetime }))
+          for (const t of tasks) {
+            const newStart = new Date(t.start_datetime.getTime() + delta * 3_600_000)
+            const newEnd   = new Date(t.end_datetime.getTime()   + delta * 3_600_000)
+            await updateDoc(doc(db, 'tasks', t.id), {
+              start_datetime: Timestamp.fromDate(newStart),
+              end_datetime:   Timestamp.fromDate(newEnd),
+            })
+          }
+          await touchSchedule()
+          pushUndo({
+            label: 'הזזת כל המשימות לפי שעת חילופים',
+            undo: async () => {
+              for (const { id, start, end } of oldTimes) {
+                await updateDoc(doc(db, 'tasks', id), {
+                  start_datetime: Timestamp.fromDate(start),
+                  end_datetime:   Timestamp.fromDate(end),
+                })
+              }
+              await updateDoc(doc(db, 'schedules', scheduleId!), { home_leave_hour: oldHour, updated_at: serverTimestamp() })
+            },
+          })
+        }
+      }
+    } catch { alert('שגיאה בעדכון שעת חילופים') }
+  }
+
   async function handleMoveTask(taskId: string, hourDelta: number) {
     const task = tasks.find(t => t.id === taskId)
     if (!task) return
@@ -539,6 +597,19 @@ export default function EditSchedule() {
               className="border border-slate-200 rounded px-1 py-0.5 text-xs text-slate-700 focus:outline-none focus:border-navy"
             />
           </div>
+          {/* Editable swap hour (home_leave_hour) */}
+          <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-500" dir="rtl">
+            <span title="שעה בה חיילים יוצאים/חוזרים הביתה, ומשמרות מתחלפות">⇅ חילופים:</span>
+            <select
+              value={schedule.home_leave_hour ?? schedule.day_start_hour ?? 6}
+              onChange={e => handleUpdateSwapHour(Number(e.target.value))}
+              className="border border-slate-200 rounded px-1 py-0.5 text-xs text-slate-700 focus:outline-none focus:border-navy"
+            >
+              {Array.from({ length: 24 }, (_, h) => (
+                <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="flex gap-2 flex-wrap items-center">
@@ -707,6 +778,29 @@ export default function EditSchedule() {
         </>
       )}
 
+      {/* Task rename bar — shown when a task is selected in builder mode */}
+      {selectedTaskId && (() => {
+        const selTask = tasks.find(t => t.id === selectedTaskId)
+        if (!selTask) return null
+        return (
+          <div className="bg-sky-50 border border-sky-200 rounded-xl px-4 py-2 mb-3 flex items-center gap-3" dir="rtl">
+            <span className="text-xs text-sky-600 font-semibold shrink-0">✎ שם:</span>
+            <input
+              key={selectedTaskId}
+              defaultValue={selTask.task_name}
+              onBlur={e => handleRenameTask(selectedTaskId, e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                if (e.key === 'Escape') { (e.target as HTMLInputElement).value = selTask.task_name; (e.target as HTMLInputElement).blur() }
+              }}
+              className="flex-1 border border-sky-300 rounded-lg px-2 py-1 text-sm text-slate-800 focus:outline-none focus:border-navy bg-white"
+              placeholder="שם המשימה..."
+            />
+            <span className="text-xs text-slate-400 shrink-0 bg-slate-100 rounded px-2 py-0.5">{selTask.task_type}</span>
+          </div>
+        )
+      })()}
+
       <div className="flex gap-4 items-start" dir="rtl">
         <div className="flex-1 min-w-0">
           {tasks.length === 0
@@ -846,6 +940,7 @@ export default function EditSchedule() {
           scheduleId={scheduleId}
           scheduleStart={scheduleStart}
           scheduleEnd={scheduleEnd}
+          defaultStartHour={schedule?.home_leave_hour ?? schedule?.day_start_hour ?? 6}
           onClose={() => setShowTaskModal(false)}
         />
       )}
