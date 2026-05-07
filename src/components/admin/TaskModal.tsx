@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { createTask, taskTypesRef } from '@/lib/firestore'
-import { getDocs } from 'firebase/firestore'
+import { createTask } from '@/lib/firestore'
 import type { TaskType } from '@/types'
 
 interface Props {
@@ -46,7 +45,6 @@ const BUILTIN_TASK_TYPES: Omit<TaskType, 'id'>[] = [
 ]
 
 export default function TaskModal({ scheduleId, scheduleStart, scheduleEnd, defaultStartHour, onClose }: Props) {
-  const [firestoreTypes, setFirestoreTypes] = useState<TaskType[]>([])
   const [taskType, setTaskType] = useState('')
   const [customName, setCustomName] = useState('')  // free-text override for task name
   const [mode, setMode] = useState<'fixed' | 'rotating'>('fixed')
@@ -70,17 +68,8 @@ export default function TaskModal({ scheduleId, scheduleStart, scheduleEnd, defa
 
   const scheduleDays = daysInRange(scheduleStart, scheduleEnd)
 
-  // Merge built-in + Firestore types, dedup by name
-  const allTypes: Omit<TaskType, 'id'>[] = [
-    ...BUILTIN_TASK_TYPES,
-    ...firestoreTypes.filter(ft => !BUILTIN_TASK_TYPES.some(b => b.name === ft.name)),
-  ]
-
-  useEffect(() => {
-    getDocs(taskTypesRef()).then(snap => {
-      setFirestoreTypes(snap.docs.map(d => ({ id: d.id, ...d.data() } as TaskType)))
-    })
-  }, [])
+  // Use built-in list only — keeps the dropdown clean and consistent across all deployments
+  const allTypes = BUILTIN_TASK_TYPES
 
   // Sync fixedStartHour default when prop changes (e.g. schedule loaded async)
   useEffect(() => {
