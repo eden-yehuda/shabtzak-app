@@ -68,6 +68,25 @@ export default function EditSchedule() {
     return () => window.removeEventListener('keydown', onKey)
   }, [performUndo])
 
+  // Column order — persisted per schedule in localStorage
+  const [colOrder, setColOrder] = useState<string[] | undefined>(() => {
+    if (typeof window === 'undefined') return undefined
+    const id = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('id') ?? '' : ''
+    try { return JSON.parse(localStorage.getItem(`colOrder_${id}`) ?? 'null') ?? undefined } catch { return undefined }
+  })
+  function handleReorderColumns(newOrder: string[]) {
+    setColOrder(newOrder)
+    if (scheduleId) localStorage.setItem(`colOrder_${scheduleId}`, JSON.stringify(newOrder))
+  }
+  // Sync colOrder key when scheduleId becomes known
+  useEffect(() => {
+    if (!scheduleId) return
+    try {
+      const stored = localStorage.getItem(`colOrder_${scheduleId}`)
+      if (stored) setColOrder(JSON.parse(stored))
+    } catch { /* ignore */ }
+  }, [scheduleId])
+
   const [llmChecked, setLlmChecked] = useState(false)
   const [llmResult, setLlmResult] = useState<string | null>(null)
   const [llmLoading, setLlmLoading] = useState(false)
@@ -882,6 +901,8 @@ export default function EditSchedule() {
                 onMoveTaskToSlot={handleMoveTaskToSlot}
                 onCreateTaskAtSlot={handleCreateTaskAtSlot}
                 onDeleteColumn={handleDeleteColumn}
+                columnOrder={colOrder}
+                onReorderColumns={handleReorderColumns}
                 onPairSoldiers={async (taskId, soldierIdA, soldierIdB) => {
                   const taskAssigns = assignments.filter(a => a.task_id === taskId)
                   const maxGroup = Math.max(0, ...taskAssigns.map(a => a.alternating_group ?? 0))
@@ -914,7 +935,7 @@ export default function EditSchedule() {
             tasks={tasks}
             finalLeave={finalLeave}
             selectedTaskId={selectedTaskId}
-            homeLeaveHour={schedule?.home_leave_hour ?? schedule?.day_start_hour ?? 2}
+            homeLeaveHour={schedule?.home_leave_hour ?? schedule?.day_start_hour ?? 6}
             onAssigned={async (taskId: string, soldierId: string) => {
               await touchSchedule()
               await handleAssigned(taskId, soldierId)
@@ -960,9 +981,7 @@ export default function EditSchedule() {
 
       {confirmPublish && (
         <ConfirmModal
-          message={errorCount > 0
-            ? `ישנן ${errorCount} שגיאות פתוחות. לפרסם בכל זאת? החיילים יראו את שלושת הימים הקרובים בלבד.`
-            : 'לפרסם את השבצ"ק? החיילים יראו את שלושת הימים הקרובים בלבד.'}
+          message='לפרסם את השבצ"ק? החיילים יראו את כל הימים.'
           onConfirm={publish}
           onCancel={() => setConfirmPublish(false)}
         />
