@@ -546,21 +546,22 @@ export default function ScheduleGrid({
               </thead>
               <tbody>
                 {(() => {
-                  // Trim leading/trailing empty rows using dayTasks directly
+                  // Compute visible row range:
+                  // - Builder mode: always show from row 0 (= dayStartHour) so all days start at the same hour.
+                  //   Bottom stays open (HOURS_PER_DAY - 1) so new tasks can be placed anywhere.
+                  // - View mode (soldiers): trim both top and bottom to only what's needed.
                   let firstOccupiedRow = 0
                   let lastOccupiedRow = HOURS_PER_DAY - 1
-                  if (dayTasks.length > 0) {
+                  if (!builderMode && dayTasks.length > 0) {
                     const startRows = dayTasks.map(t => hourToRowIndex(t.start_datetime.getHours()))
                     const endRows = dayTasks.map(t => {
                       const sr = hourToRowIndex(t.start_datetime.getHours())
                       const dur = Math.max(1, Math.round((t.end_datetime.getTime() - t.start_datetime.getTime()) / 3600000))
                       return Math.min(sr + dur - 1, HOURS_PER_DAY - 1)
                     })
-                    // If there are overflow tasks from previous day, they occupy row 0 — include it
                     if (overflowTypes.size > 0) startRows.push(0)
                     firstOccupiedRow = Math.min(...startRows)
-                    // In builder mode keep bottom open so new tasks can be placed; in view mode trim bottom too
-                    if (!builderMode) lastOccupiedRow = Math.min(Math.max(...endRows), HOURS_PER_DAY - 1)
+                    lastOccupiedRow = Math.min(Math.max(...endRows), HOURS_PER_DAY - 1)
                   }
                   const visibleHours = DAY_HOURS.slice(firstOccupiedRow, lastOccupiedRow + 1)
 
