@@ -3,60 +3,22 @@ import AdminLayout from '@/components/layout/AdminLayout'
 import JusticeTable from '@/components/admin/JusticeTable'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
-import { useScheduleTasks } from '@/hooks/useSchedule'
 import { useAllSchedulesTotals } from '@/hooks/useAllSchedulesTotals'
-import { onSnapshot, query, orderBy } from 'firebase/firestore'
-import { schedulesRef, taskTypesRef } from '@/lib/firestore'
-import { taskDurationHours } from '@/utils/dateUtils'
-import type { Schedule, TaskType } from '@/types'
-
-const DAY_NAMES = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
+import { onSnapshot } from 'firebase/firestore'
+import { taskTypesRef } from '@/lib/firestore'
+import type { TaskType } from '@/types'
 
 function isoDate(d: Date) {
   return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
 }
 
-function dayLabel(dateStr: string) {
-  const d = new Date(dateStr + 'T12:00:00')
-  return `${DAY_NAMES[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
-}
-
-function daysInRange(from: Date, to: Date): string[] {
-  const days: string[] = []
-  const cur = new Date(from)
-  cur.setHours(12, 0, 0, 0)
-  const end = new Date(to)
-  end.setHours(12, 0, 0, 0)
-  while (cur <= end) {
-    days.push(isoDate(cur))
-    cur.setDate(cur.getDate() + 1)
-  }
-  return days
-}
-
 export default function JusticePage() {
   const soldiers = useSoldiers(false)
   const finalLeave = useFinalLeave()
-  const [schedules, setSchedules] = useState<Schedule[]>([])
-  const [selectedId, setSelectedId] = useState<string>('')
   const [taskTypes, setTaskTypes] = useState<TaskType[]>([])
   const [filter, setFilter] = useState<'all' | 'commanders' | 'soldiers'>('all')
   const [taskTypeFilter, setTaskTypeFilter] = useState<string>('')
   const [tab, setTab] = useState<'justice' | 'leave'>('justice')
-
-  useEffect(() => {
-    return onSnapshot(query(schedulesRef(), orderBy('start_datetime', 'desc')), snap => {
-      const list = snap.docs.map(d => ({
-        id: d.id,
-        ...d.data(),
-        start_datetime: d.data().start_datetime?.toDate(),
-        end_datetime: d.data().end_datetime?.toDate(),
-      } as Schedule))
-      setSchedules(list)
-      if (!selectedId && list.length > 0) setSelectedId(list[0].id)
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   useEffect(() => {
     return onSnapshot(taskTypesRef(), snap => {
@@ -64,28 +26,21 @@ export default function JusticePage() {
     })
   }, [])
 
-  const { tasks, assignments } = useScheduleTasks(selectedId || null)
+  // All data from start of line — no per-schedule filter
   const { allTasks, allAssignments } = useAllSchedulesTotals()
 
-  const usedTaskTypes = Array.from(new Set(tasks.map(t => t.task_type))).sort()
+  const usedTaskTypes = useMemo(() =>
+    Array.from(new Set(allTasks.map(t => t.task_type))).sort(),
+    [allTasks]
+  )
 
-  const selectedSchedule = schedules.find(s => s.id === selectedId)
-
-  // Dates for leave tab — schedule date range
-  const leaveDates = useMemo(() => {
-    if (!selectedSchedule?.start_datetime || !selectedSchedule?.end_datetime) return []
-    return daysInRange(selectedSchedule.start_datetime, selectedSchedule.end_datetime)
-  }, [selectedSchedule])
-
-  const sortedSoldiers = useMemo(() =>
-    [...soldiers]
-      .filter(s => {
-        if (!s.is_active) return false
-        if (filter === 'commanders') return s.is_commander
-        if (filter === 'soldiers') return !s.is_commander
-        return true
-      })
-      .sort((a, b) => a.full_name.localeCompare(b.full_name, 'he')),
+  const filteredSoldiers = useMemo(() =>
+    soldiers.filter(s => {
+      if (!s.is_active) return false
+      if (filter === 'commanders') return s.is_commander
+      if (filter === 'soldiers') return !s.is_commander
+      return true
+    }),
     [soldiers, filter]
   )
 
@@ -93,13 +48,7 @@ export default function JusticePage() {
     <AdminLayout>
       <div className="flex flex-wrap gap-3 items-center mb-4">
         <h1 className="text-xl font-bold text-navy">טבלת צדק</h1>
-        <select
-          value={selectedId}
-          onChange={e => setSelectedId(e.target.value)}
-          className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm"
-        >
-          {schedules.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+        <span className="text-xs bg-navy/10 text-navy px-2 py-1 rounded-full font-semibold">מתחילת הקו</span>
       </div>
 
       {/* Tabs */}
@@ -118,7 +67,7 @@ export default function JusticePage() {
         </button>
       </div>
 
-      {/* Soldier type filter (shared) */}
+      {/* Filters */}
       <div className="flex flex-wrap gap-2 mb-4">
         {(['all', 'commanders', 'soldiers'] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)}
@@ -137,11 +86,8 @@ export default function JusticePage() {
               כל המשימות
             </button>
             {usedTaskTypes.map(tt => (
-              <button
-                key={tt}
-                onClick={() => setTaskTypeFilter(tt)}
-                className={`px-3 py-1.5 rounded-lg text-sm ${taskTypeFilter === tt ? 'bg-navy text-white' : 'bg-slate-100 text-slate-700'}`}
-              >
+              <button key={tt} onClick={() => setTaskTypeFilter(tt)}
+                className={`px-3 py-1.5 rounded-lg text-sm ${taskTypeFilter === tt ? 'bg-navy text-white' : 'bg-slate-100 text-slate-700'}`}>
                 {tt}
               </button>
             ))}
@@ -151,20 +97,18 @@ export default function JusticePage() {
 
       {tab === 'justice' && (
         <JusticeTable
-          tasks={tasks}
-          assignments={assignments}
+          tasks={allTasks}
+          assignments={allAssignments}
           soldiers={soldiers}
           taskTypes={taskTypes}
           filter={filter}
           taskTypeFilter={taskTypeFilter}
-          allTasks={allTasks}
-          allAssignments={allAssignments}
         />
       )}
 
       {tab === 'leave' && (
         <LeaveSummary
-          soldiers={sortedSoldiers}
+          soldiers={filteredSoldiers}
           finalLeave={finalLeave}
           allTasks={allTasks}
           allAssignments={allAssignments}
@@ -174,7 +118,7 @@ export default function JusticePage() {
   )
 }
 
-// Summary view: per soldier, days at home vs days on tasks (across all schedules)
+// Summary view: per soldier, sorted by most home days desc
 function LeaveSummary({
   soldiers, finalLeave, allTasks, allAssignments,
 }: {
@@ -183,7 +127,6 @@ function LeaveSummary({
   allTasks: Array<{ id: string; start_datetime: Date; end_datetime: Date }>
   allAssignments: Array<{ task_id: string; soldier_id: string }>
 }) {
-  // Days each soldier had a task assignment
   const taskDaysBySoldier = useMemo(() => {
     const map: Record<string, Set<string>> = {}
     const taskById = new Map(allTasks.map(t => [t.id, t]))
@@ -196,7 +139,6 @@ function LeaveSummary({
     return map
   }, [allTasks, allAssignments])
 
-  // Days each soldier was at home (approved leave)
   const homeDaysBySoldier = useMemo(() => {
     const map: Record<string, Set<string>> = {}
     for (const r of finalLeave) {
@@ -207,26 +149,37 @@ function LeaveSummary({
     return map
   }, [finalLeave])
 
+  // Sort by most home days desc, tie-break by name
+  const sorted = useMemo(() =>
+    [...soldiers].sort((a, b) => {
+      const diff = (homeDaysBySoldier[b.id]?.size ?? 0) - (homeDaysBySoldier[a.id]?.size ?? 0)
+      return diff !== 0 ? diff : a.full_name.localeCompare(b.full_name, 'he')
+    }),
+    [soldiers, homeDaysBySoldier]
+  )
+
   return (
     <div className="overflow-x-auto">
       <table className="text-sm border-collapse w-full max-w-2xl">
         <thead>
           <tr className="bg-slate-50 text-right">
+            <th className="px-4 py-2 font-semibold border-b border-slate-200">#</th>
             <th className="px-4 py-2 font-semibold border-b border-slate-200">שם</th>
             <th className="px-4 py-2 text-center font-semibold border-b border-slate-200">🏠 ימי בית</th>
             <th className="px-4 py-2 text-center font-semibold border-b border-slate-200">📋 ימי משימות</th>
-            <th className="px-4 py-2 text-center font-semibold border-b border-slate-200">סה&quot;כ ימים</th>
+            <th className="px-4 py-2 text-center font-semibold border-b border-slate-200">סה&quot;כ</th>
           </tr>
         </thead>
         <tbody>
-          {soldiers.map(s => {
+          {sorted.map((s, idx) => {
             const homeDays = homeDaysBySoldier[s.id]?.size ?? 0
             const taskDays = taskDaysBySoldier[s.id]?.size ?? 0
             return (
               <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
+                <td className="px-4 py-2 text-slate-400 text-xs w-8">{idx + 1}</td>
                 <td className="px-4 py-2 font-medium whitespace-nowrap">
-                  {s.full_name}
                   {s.is_commander && <span className="text-xs text-navy mr-1">★</span>}
+                  {s.full_name}
                 </td>
                 <td className="px-4 py-2 text-center">
                   {homeDays > 0
@@ -239,7 +192,7 @@ function LeaveSummary({
                     : <span className="text-slate-300">—</span>}
                 </td>
                 <td className="px-4 py-2 text-center font-bold text-slate-700">
-                  {homeDays + taskDays}
+                  {homeDays + taskDays || '—'}
                 </td>
               </tr>
             )
