@@ -457,6 +457,7 @@ export default function HomePage() {
           from={survey.from}
           to={survey.to}
           maxDays={survey.max_days ?? 0}
+          defaultSoldierId={selectedSoldierId}
           onClose={() => setShowLeave(false)}
         />
       )}
