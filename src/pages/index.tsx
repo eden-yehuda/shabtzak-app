@@ -9,9 +9,189 @@ import { usePublishedSchedule } from '@/hooks/usePublishedSchedule'
 import { onSnapshot, query, orderBy, doc } from 'firebase/firestore'
 import { schedulesRef } from '@/lib/firestore'
 import { db } from '@/lib/firebase'
-import type { Schedule } from '@/types'
+import type { Schedule, Task, Assignment, Soldier, LeaveRequest } from '@/types'
 
 interface SurveySettings { is_open: boolean; from: string; to: string; max_days: number }
+
+// ── SOS Modal ────────────────────────────────────────────────────────────────
+function SOSModal({ tasks, assignments, soldiers, finalLeave, onClose }: {
+  tasks: Task[]
+  assignments: Assignment[]
+  soldiers: Soldier[]
+  finalLeave: LeaveRequest[]
+  onClose: () => void
+}) {
+  const [now] = useState(() => new Date())
+  const horizon = useMemo(() => new Date(now.getTime() + 12 * 3600 * 1000), [now])
+
+  // YYYY-MM-DD for today (local)
+  const todayStr = useMemo(() => {
+    const d = now
+    return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-')
+  }, [now])
+
+  function fmtHour(d: Date) { return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` }
+  function hoursLabel(ms: number) {
+    const h = Math.round(ms / 3600000)
+    return h > 0 ? `${h}ש'` : `${Math.round(ms / 60000)}ד'`
+  }
+
+  // Tasks overlapping [now, horizon]
+  const activeTasks = useMemo(() =>
+    tasks
+      .filter(t => t.start_datetime < horizon && t.end_datetime > now)
+      .sort((a, b) => a.start_datetime.getTime() - b.start_datetime.getTime()),
+    [tasks, now, horizon]
+  )
+
+  // Soldiers busy in the next 12h (have assignment on an active task)
+  const busySoldierIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const a of assignments) {
+      if (activeTasks.some(t => t.id === a.task_id)) s.add(a.soldier_id)
+    }
+    return s
+  }, [assignments, activeTasks])
+
+  // On leave today
+  const onLeaveIds = useMemo(() => new Set(
+    finalLeave.filter(r => r.date === todayStr && r.status === 'approved').map(r => r.soldier_id)
+  ), [finalLeave, todayStr])
+
+  const activeSoldiers = useMemo(() => soldiers.filter(s => s.is_active), [soldiers])
+
+  // "In the air" = active, not on leave, not assigned to any task in next 12h
+  const freeSoldiers = useMemo(() =>
+    activeSoldiers.filter(s => !busySoldierIds.has(s.id) && !onLeaveIds.has(s.id)),
+    [activeSoldiers, busySoldierIds, onLeaveIds]
+  )
+  const leaveSoldiers = useMemo(() =>
+    activeSoldiers.filter(s => onLeaveIds.has(s.id)),
+    [activeSoldiers, onLeaveIds]
+  )
+
+  // Per-task: list of soldiers assigned
+  const taskGroups = useMemo(() =>
+    activeTasks.map(t => {
+      const assigned = assignments
+        .filter(a => a.task_id === t.id)
+        .map(a => activeSoldiers.find(s => s.id === a.soldier_id))
+        .filter((s): s is Soldier => !!s)
+      return { task: t, soldiers: assigned }
+    }),
+    [activeTasks, assignments, activeSoldiers]
+  )
+
+  return (
+    <div className="fixed inset-0 bg-slate-900 z-50 flex flex-col overflow-hidden" dir="rtl">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 pt-safe-top py-3 bg-slate-900 border-b border-slate-700 shrink-0">
+        <div>
+          <h2 className="text-white font-bold text-lg leading-tight">🆘 SOS — 12 שעות קרובות</h2>
+          <p className="text-slate-400 text-xs">{fmtHour(now)} — {fmtHour(horizon)}</p>
+        </div>
+        <button onClick={onClose} className="text-slate-400 hover:text-white text-3xl leading-none px-2 py-1">×</button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+
+        {/* ── באוויר (free) — highlighted ── */}
+        <div className="rounded-2xl bg-emerald-500 p-4 shadow-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-2xl">✈️</span>
+            <h3 className="text-white font-bold text-lg">באוויר — {freeSoldiers.length}</h3>
+          </div>
+          {freeSoldiers.length === 0
+            ? <p className="text-emerald-100 text-sm text-center py-2">אין חיילים פנויים</p>
+            : (
+              <div className="flex flex-wrap gap-2">
+                {freeSoldiers.map(s => (
+                  <span key={s.id} className={`px-3 py-1.5 rounded-xl text-sm font-semibold shadow ${
+                    s.is_commander
+                      ? 'bg-white text-emerald-800 ring-2 ring-yellow-400'
+                      : 'bg-emerald-100 text-emerald-900'
+                  }`}>
+                    {s.is_commander && '★ '}{s.full_name}
+                  </span>
+                ))}
+              </div>
+            )
+          }
+        </div>
+
+        {/* ── משימות פעילות ── */}
+        <div>
+          <h3 className="text-slate-300 font-bold text-sm uppercase tracking-wide mb-3 px-1">
+            📋 משימות — {taskGroups.length}
+          </h3>
+          {taskGroups.length === 0
+            ? <p className="text-slate-500 text-sm text-center py-4">אין משימות בטווח זה</p>
+            : <div className="space-y-3">
+                {taskGroups.map(({ task, soldiers: sol }) => {
+                  const isActive = task.start_datetime <= now && task.end_datetime > now
+                  const remaining = task.end_datetime.getTime() - now.getTime()
+                  return (
+                    <div key={task.id} className={`rounded-2xl border p-4 ${
+                      isActive ? 'bg-slate-800 border-slate-600' : 'bg-slate-850 border-slate-700 opacity-80'
+                    }`}>
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <span className="text-white font-bold text-base">{task.task_name}</span>
+                          {isActive && (
+                            <span className="mr-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                              עכשיו
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-slate-300 text-xs">{fmtHour(task.start_datetime)}–{fmtHour(task.end_datetime)}</div>
+                          {isActive && (
+                            <div className="text-orange-400 text-[11px] font-semibold">עוד {hoursLabel(remaining)}</div>
+                          )}
+                        </div>
+                      </div>
+                      {sol.length === 0
+                        ? <p className="text-slate-500 text-xs italic">אין שיבוצים</p>
+                        : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {sol.map(s => (
+                              <span key={s.id} className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
+                                s.is_commander ? 'bg-yellow-500/20 text-yellow-300 ring-1 ring-yellow-500' : 'bg-slate-700 text-slate-200'
+                              }`}>
+                                {s.is_commander && '★ '}{s.full_name}
+                              </span>
+                            ))}
+                          </div>
+                        )
+                      }
+                    </div>
+                  )
+                })}
+              </div>
+          }
+        </div>
+
+        {/* ── בית (on leave) ── */}
+        {leaveSoldiers.length > 0 && (
+          <div className="rounded-2xl bg-slate-800 border border-slate-700 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-lg">🏠</span>
+              <h3 className="text-slate-300 font-semibold text-sm">בית — {leaveSoldiers.length}</h3>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {leaveSoldiers.map(s => (
+                <span key={s.id} className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-700 text-slate-400">
+                  {s.full_name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  )
+}
 
 function formatUpdatedAt(d: Date): string {
   const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
@@ -37,6 +217,7 @@ export default function HomePage() {
   const [showLeave, setShowLeave] = useState(false)
   const [survey, setSurvey] = useState<SurveySettings | null>(null)
   const [showAllLeaves, setShowAllLeaves] = useState(false)
+  const [showSOS, setShowSOS] = useState(false)
 
   useEffect(() => {
     return onSnapshot(doc(db, 'settings', 'leave_survey'), snap => {
@@ -138,6 +319,12 @@ export default function HomePage() {
 
   const navActions = (
     <>
+      <button
+        onClick={() => setShowSOS(true)}
+        className="text-xs bg-red-500 hover:bg-red-400 text-white px-3 py-1.5 rounded-lg font-bold transition shadow-md"
+      >
+        🆘 SOS
+      </button>
       <button
         onClick={() => setShowAllLeaves(true)}
         className="text-xs bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg font-semibold transition"
@@ -279,6 +466,16 @@ export default function HomePage() {
           soldiers={soldiers}
           finalLeave={finalLeave}
           onClose={() => setShowAllLeaves(false)}
+        />
+      )}
+
+      {showSOS && (
+        <SOSModal
+          tasks={tasks}
+          assignments={assignments}
+          soldiers={soldiers}
+          finalLeave={finalLeave}
+          onClose={() => setShowSOS(false)}
         />
       )}
     </Layout>
