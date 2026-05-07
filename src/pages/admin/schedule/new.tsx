@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { doc, updateDoc } from 'firebase/firestore'
+import { doc, updateDoc, collection, addDoc, getDocs, query, where, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import AdminLayout from '@/components/layout/AdminLayout'
 import ScheduleGrid from '@/components/schedule/ScheduleGrid'
@@ -10,10 +10,11 @@ import ValidationPanel from '@/components/admin/ValidationPanel'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useScheduleTasks } from '@/hooks/useSchedule'
+import { useSchedules } from '@/hooks/useSchedules'
 import { useAuth } from '@/hooks/useAuth'
 import { useFinalLeave } from '@/hooks/useFinalLeave'
 import { validateSchedule } from '@/utils/validation'
-import { createSchedule } from '@/lib/firestore'
+import { createSchedule, deleteAssignment } from '@/lib/firestore'
 import type { ValidationError } from '@/types'
 
 function isoDate(d: Date) {
@@ -28,8 +29,9 @@ export default function NewSchedule() {
   const { uid } = useAuth()
   const soldiers = useSoldiers()
   const finalLeave = useFinalLeave()
+  const allSchedules = useSchedules()
 
-  // Step 1 state
+  // ── Step 1 form state ────────────────────────────────────────────────────
   const [scheduleName, setScheduleName] = useState('')
   const today = useMemo(() => { const d = new Date(); d.setHours(12,0,0,0); return d }, [])
   const [startDate, setStartDate] = useState(() => isoDate(today))
@@ -37,7 +39,11 @@ export default function NewSchedule() {
   const [dayStartHour, setDayStartHour] = useState(6)
   const [homeLeaveHour, setHomeLeaveHour] = useState(14)
 
-  // Builder state
+  // Template
+  const [templateId, setTemplateId] = useState<string>('')
+  const [copying, setCopying] = useState(false)
+
+  // ── Builder state ────────────────────────────────────────────────────────
   const [scheduleId, setScheduleId] = useState<string | null>(null)
   const [scheduleStart, setScheduleStart] = useState<Date>(today)
   const [scheduleEnd, setScheduleEnd] = useState<Date>(addDaysToDate(today, 7))
@@ -54,18 +60,17 @@ export default function NewSchedule() {
   const [llmLoading, setLlmLoading] = useState(false)
   const [confirmPublish, setConfirmPublish] = useState(false)
 
-  // Live validation — runs whenever tasks/assignments change
   useEffect(() => {
     if (!scheduleId) return
     const errors = validateSchedule(tasks, assignments, soldiers, finalLeave)
     setValidationErrors(errors)
-    setLlmChecked(false) // reset LLM check on any change
+    setLlmChecked(false)
   }, [tasks, assignments, soldiers, finalLeave, scheduleId])
 
   async function initSchedule() {
     if (scheduleId || !scheduleName || !uid) return
     const start = new Date(startDate + 'T12:00:00')
-    const end = new Date(endDate + 'T12:00:00')
+    const end   = new Date(endDate   + 'T12:00:00')
     const ref = await createSchedule({
       name: scheduleName,
       start_datetime: start,
@@ -75,14 +80,50 @@ export default function NewSchedule() {
       day_start_hour: dayStartHour,
       home_leave_hour: homeLeaveHour,
     })
-    setScheduleId(ref.id)
+    const newId = ref.id
+    setScheduleId(newId)
     setScheduleStart(start)
     setScheduleEnd(end)
+
+    // ── Copy tasks from template ─────────────────────────────────────────
+    if (templateId) {
+      setCopying(true)
+      try {
+        const templateSchedule = allSchedules.find(s => s.id === templateId)
+        if (!templateSchedule) return
+
+        // Offset = new schedule start − template start (in ms)
+        const templateStart = templateSchedule.start_datetime
+        const offsetMs = start.getTime() - templateStart.getTime()
+
+        // Load template tasks
+        const taskSnap = await getDocs(
+          query(collection(db, 'tasks'), where('schedule_id', '==', templateId))
+        )
+        for (const taskDoc of taskSnap.docs) {
+          const td = taskDoc.data()
+          const tStart = td.start_datetime?.toDate?.() ?? new Date(td.start_datetime)
+          const tEnd   = td.end_datetime?.toDate?.()   ?? new Date(td.end_datetime)
+          await addDoc(collection(db, 'tasks'), {
+            schedule_id:           newId,
+            task_type:             td.task_type,
+            task_name:             td.task_name,
+            start_datetime:        Timestamp.fromDate(new Date(tStart.getTime() + offsetMs)),
+            end_datetime:          Timestamp.fromDate(new Date(tEnd.getTime()   + offsetMs)),
+            required_people_count: td.required_people_count ?? 0,
+            requires_commander:    td.requires_commander ?? false,
+            difficulty:            td.difficulty ?? 'normal',
+            notes:                 td.notes ?? '',
+          })
+        }
+      } finally {
+        setCopying(false)
+      }
+    }
   }
 
   async function runLlmCheck() {
-    setLlmLoading(true)
-    setLlmResult(null)
+    setLlmLoading(true); setLlmResult(null)
     try {
       const res = await fetch('/.netlify/functions/validate-schedule', {
         method: 'POST',
@@ -92,40 +133,41 @@ export default function NewSchedule() {
       const data = await res.json()
       if (data.error) setLlmResult(`⚠️ ${data.error}`)
       else { setLlmResult(data.result); setLlmChecked(true) }
-    } catch {
-      setLlmResult('שגיאה בחיבור לשרת — ודא שה-ANTHROPIC_API_KEY מוגדר ב-Netlify')
-    } finally {
-      setLlmLoading(false)
-    }
+    } catch { setLlmResult('שגיאה בחיבור לשרת') }
+    finally { setLlmLoading(false) }
   }
 
   async function publish() {
     if (!scheduleId) return
-    try {
-      await updateDoc(doc(db, 'schedules', scheduleId), { status: 'published' })
-    } catch { alert('פרסום נכשל — נסה שוב') }
+    try { await updateDoc(doc(db, 'schedules', scheduleId), { status: 'published' }) }
+    catch { alert('פרסום נכשל — נסה שוב') }
     setConfirmPublish(false)
   }
 
   const errorCount = validationErrors.filter(e => e.type === 'error').length
-  const warnCount = validationErrors.filter(e => e.type === 'warning').length
+  const warnCount  = validationErrors.filter(e => e.type === 'warning').length
 
-  // ── Step 1: create schedule ──────────────────────────────────────────────
+  // ── Step 1: create schedule form ─────────────────────────────────────────
   if (!scheduleId) {
     return (
       <AdminLayout>
         <h1 className="text-2xl font-bold text-navy mb-6">{'שבצ"ק חדש'}</h1>
         <div className="max-w-sm space-y-4">
+
+          {/* Name */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">{'שם השבצ"ק'}</label>
-            <input placeholder={'למשל: שבצ"ק שבוע 1'} value={scheduleName}
+            <input placeholder={'למשל: שבצ"ק שבוע 3'} value={scheduleName}
               onChange={e => setScheduleName(e.target.value)}
               className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-navy" />
           </div>
+
+          {/* Date range */}
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="block text-sm font-semibold text-slate-700 mb-1">מתאריך</label>
-              <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); if (e.target.value > endDate) setEndDate(e.target.value) }}
+              <input type="date" value={startDate}
+                onChange={e => { setStartDate(e.target.value); if (e.target.value > endDate) setEndDate(e.target.value) }}
                 className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-navy" />
             </div>
             <div className="flex-1">
@@ -135,6 +177,7 @@ export default function NewSchedule() {
                 className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-navy" />
             </div>
           </div>
+
           {/* Swap / shift times */}
           <div className="bg-slate-50 rounded-xl p-4 space-y-3">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">שעות מעבר</p>
@@ -142,7 +185,6 @@ export default function NewSchedule() {
               <div className="flex-1">
                 <label className="block text-xs font-semibold text-slate-600 mb-1">
                   תחילת יום צבאי
-                  <span className="text-slate-400 font-normal mr-1">(midnight boundary)</span>
                 </label>
                 <select value={dayStartHour} onChange={e => setDayStartHour(Number(e.target.value))}
                   className="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-navy">
@@ -154,7 +196,6 @@ export default function NewSchedule() {
               <div className="flex-1">
                 <label className="block text-xs font-semibold text-slate-600 mb-1">
                   שעת חילופים
-                  <span className="text-slate-400 font-normal mr-1">(יציאה/כניסה)</span>
                 </label>
                 <select value={homeLeaveHour} onChange={e => setHomeLeaveHour(Number(e.target.value))}
                   className="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-navy">
@@ -164,20 +205,36 @@ export default function NewSchedule() {
                 </select>
               </div>
             </div>
-            <p className="text-xs text-slate-400">
-              משמרת ראשונה תתחיל ב-<strong>{String(homeLeaveHour).padStart(2,'0')}:00</strong> — ניתן לשנות מאוחר יותר
-            </p>
           </div>
-          <button onClick={initSchedule} disabled={!scheduleName || !uid}
+
+          {/* Template */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">📋 העתקה מתבנית (רשות)</p>
+            <p className="text-xs text-amber-600">בחר שבצ"ק קיים — כל המשימות יועתקו ויוזזו לתאריכי השבוע החדש</p>
+            <select
+              value={templateId}
+              onChange={e => setTemplateId(e.target.value)}
+              className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500 bg-white"
+            >
+              <option value="">ללא תבנית (שבצ"ק ריק)</option>
+              {allSchedules.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.start_datetime?.toLocaleDateString?.('he-IL') ?? ''})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button onClick={initSchedule} disabled={!scheduleName || !uid || copying}
             className="w-full bg-navy text-white rounded-xl py-3 font-semibold disabled:opacity-40 text-sm">
-            {'צור שבצ"ק →'}
+            {copying ? '⏳ מעתיק משימות...' : templateId ? '📋 צור שבצ"ק מתבנית →' : 'צור שבצ"ק →'}
           </button>
         </div>
       </AdminLayout>
     )
   }
 
-  // ── Step 2: builder ──────────────────────────────────────────────────────
+  // ── Step 2: builder ───────────────────────────────────────────────────────
   return (
     <AdminLayout>
       <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
@@ -193,33 +250,28 @@ export default function NewSchedule() {
             📊 סנכרון שבצ&quot;ק
           </button>
 
-          {/* Live validation badge */}
           <button onClick={() => setShowValidation(v => !v)}
             className={`rounded-xl px-4 py-2 text-sm font-semibold border transition ${
               errorCount > 0 ? 'bg-red-50 border-red-300 text-red-700' :
-              warnCount > 0 ? 'bg-yellow-50 border-yellow-300 text-yellow-700' :
+              warnCount > 0  ? 'bg-yellow-50 border-yellow-300 text-yellow-700' :
               'bg-green-50 border-green-300 text-green-700'
             }`}>
             {errorCount > 0 ? `⛔ ${errorCount} שגיאות` : warnCount > 0 ? `⚠️ ${warnCount} אזהרות` : '✓ תקין'}
           </button>
 
-          {/* LLM check */}
           <button onClick={runLlmCheck} disabled={llmLoading || tasks.length === 0}
             className="border border-purple-300 text-purple-700 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40 hover:bg-purple-50 transition">
             {llmLoading ? '🤖 בודק...' : llmChecked ? '🤖 ✓ נבדק' : '🤖 בדוק שבצ"ק'}
           </button>
 
-          {/* Publish */}
           <button onClick={() => { if (llmChecked || errorCount === 0) setConfirmPublish(true) }}
             disabled={!llmChecked && errorCount > 0}
-            title={!llmChecked ? 'יש לבצע בדיקת שבצ"ק לפני פרסום' : ''}
             className="bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40">
             פרסם ✓
           </button>
         </div>
       </div>
 
-      {/* LLM result */}
       {llmResult && (
         <div className={`rounded-xl p-4 mb-4 text-sm whitespace-pre-wrap border ${
           llmResult.includes('✅') ? 'bg-green-50 border-green-200 text-green-800' : 'bg-purple-50 border-purple-200 text-purple-900'
@@ -229,19 +281,15 @@ export default function NewSchedule() {
         </div>
       )}
 
-      {/* Inline validation */}
       {showValidation && validationErrors.length > 0 && (
-        <div className="mb-4">
-          <ValidationPanel errors={validationErrors} />
-        </div>
+        <div className="mb-4"><ValidationPanel errors={validationErrors} /></div>
       )}
 
-      {/* Main builder: grid + soldier panel */}
       <div className="flex gap-4 items-start" dir="rtl">
         <div className="flex-1 min-w-0">
           {tasks.length === 0
             ? <div className="border-2 border-dashed border-slate-200 rounded-xl py-16 text-center text-slate-400 text-sm">
-                לחץ &quot;+ הוסף משימה&quot; כדי להתחיל
+                {copying ? '⏳ מעתיק משימות מהתבנית...' : 'לחץ "+ הוסף משימה" כדי להתחיל'}
               </div>
             : <ScheduleGrid
                 tasks={tasks}
@@ -249,6 +297,8 @@ export default function NewSchedule() {
                 soldiers={soldiers}
                 finalLeave={finalLeave}
                 builderMode
+                dayStartHour={dayStartHour}
+                homeLeaveHour={homeLeaveHour}
                 selectedTaskId={selectedTaskId}
                 onSelectTask={id => setSelectedTaskId(prev => prev === id ? null : id)}
                 onRemoveSoldier={async (taskId, soldierId) => {
@@ -267,6 +317,7 @@ export default function NewSchedule() {
             tasks={tasks}
             finalLeave={finalLeave}
             selectedTaskId={selectedTaskId}
+            homeLeaveHour={homeLeaveHour}
           />
         </div>
       </div>
