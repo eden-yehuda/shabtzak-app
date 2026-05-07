@@ -34,6 +34,8 @@ export default function NewSchedule() {
   const today = useMemo(() => { const d = new Date(); d.setHours(12,0,0,0); return d }, [])
   const [startDate, setStartDate] = useState(() => isoDate(today))
   const [endDate, setEndDate] = useState(() => isoDate(addDaysToDate(today, 7)))
+  const [dayStartHour, setDayStartHour] = useState(6)
+  const [homeLeaveHour, setHomeLeaveHour] = useState(14)
 
   // Builder state
   const [scheduleId, setScheduleId] = useState<string | null>(null)
@@ -70,6 +72,8 @@ export default function NewSchedule() {
       end_datetime: end,
       status: 'draft',
       created_by: uid,
+      day_start_hour: dayStartHour,
+      home_leave_hour: homeLeaveHour,
     })
     setScheduleId(ref.id)
     setScheduleStart(start)
@@ -130,6 +134,39 @@ export default function NewSchedule() {
                 onChange={e => setEndDate(e.target.value)}
                 className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-navy" />
             </div>
+          </div>
+          {/* Swap / shift times */}
+          <div className="bg-slate-50 rounded-xl p-4 space-y-3">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">שעות מעבר</p>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  תחילת יום צבאי
+                  <span className="text-slate-400 font-normal mr-1">(midnight boundary)</span>
+                </label>
+                <select value={dayStartHour} onChange={e => setDayStartHour(Number(e.target.value))}
+                  className="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-navy">
+                  {Array.from({ length: 12 }, (_, h) => (
+                    <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  שעת חילופים
+                  <span className="text-slate-400 font-normal mr-1">(יציאה/כניסה)</span>
+                </label>
+                <select value={homeLeaveHour} onChange={e => setHomeLeaveHour(Number(e.target.value))}
+                  className="w-full border border-slate-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-navy">
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <p className="text-xs text-slate-400">
+              משמרת ראשונה תתחיל ב-<strong>{String(homeLeaveHour).padStart(2,'0')}:00</strong> — ניתן לשנות מאוחר יותר
+            </p>
           </div>
           <button onClick={initSchedule} disabled={!scheduleName || !uid}
             className="w-full bg-navy text-white rounded-xl py-3 font-semibold disabled:opacity-40 text-sm">
@@ -239,6 +276,7 @@ export default function NewSchedule() {
           scheduleId={scheduleId}
           scheduleStart={scheduleStart}
           scheduleEnd={scheduleEnd}
+          defaultStartHour={homeLeaveHour}
           onClose={() => setShowTaskModal(false)}
         />
       )}
