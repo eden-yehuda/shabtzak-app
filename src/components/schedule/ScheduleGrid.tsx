@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import type { Task, Assignment, Soldier, LeaveRequest } from '@/types'
 
 interface Props {
@@ -29,7 +29,7 @@ interface Props {
 }
 
 // Visual order right-to-left (RTL)
-const COLUMN_ORDER = ['תרג"ד', 'סיור', 'בלת"מ', 'כ"כ ג', 'כ"כ ב', 'כוננות', 'כ"כ א', 'אחורית', 'ש"ג', 'של"ז', 'תורן רס"פ']
+const COLUMN_ORDER = ['תרג"ד', 'סיור', 'בלת"מ', 'כ"כ ג', 'כ"כ ב', 'כוננות', 'כ"כ א', 'אחורית', 'ש"ג', 'של"ז', 'תורן רס"פ', 'תורן מטבח']
 
 // Colors per column type
 const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: string; cardBorder: string; cardText: string; mineBg: string }> = {
@@ -44,6 +44,7 @@ const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: stri
   'ש"ג':      { headBg: '#4A7A5E', headText: '#fff', cardBg: '#EAF3EE', cardBorder: '#B8D5C5', cardText: '#1A3828', mineBg: '#365E48' },
   'של"ז':     { headBg: '#635E88', headText: '#fff', cardBg: '#EDEAF6', cardBorder: '#C5C0DC', cardText: '#2A2448', mineBg: '#4D4870' },
   'תורן רס"פ': { headBg: '#A85D5D', headText: '#fff', cardBg: '#F8E9E9', cardBorder: '#E0B5B5', cardText: '#4D1F1F', mineBg: '#7A3F3F' },
+  'תורן מטבח': { headBg: '#6B7A40', headText: '#fff', cardBg: '#F0F4E4', cardBorder: '#C8D5A0', cardText: '#2E3518', mineBg: '#505D28' },
 }
 const DEFAULT_COL_STYLE = { headBg: '#556070', headText: '#fff', cardBg: '#EEF0F2', cardBorder: '#C8CDD5', cardText: '#222D38', mineBg: '#3A4755' }
 
@@ -101,11 +102,25 @@ export default function ScheduleGrid({
   // Drag-to-resize. Row height = 32px (h-8). Snap to 0.5h → 16px per snap unit.
   const ROW_HEIGHT_PX = 32
   const SNAP_PX = ROW_HEIGHT_PX / 2 // 16px = half hour
+  const DRAG_THRESHOLD_PX = 6      // min movement to distinguish drag from click
+
+  // Resize drag (end-time handle)
   const [drag, setDrag] = useState<{
     taskId: string
     startY: number
     deltaHalfHours: number  // in 0.5h units (1 = 30 min, 2 = 60 min)
   } | null>(null)
+
+  // Move drag (card body)
+  const [moveDrag, setMoveDrag] = useState<{
+    taskId: string
+    startY: number
+    deltaHalfHours: number
+    isDragging: boolean
+  } | null>(null)
+
+  // Prevent td's onClick from firing when a drag just completed
+  const dragOccurredRef = useRef(false)
 
   useEffect(() => {
     if (!drag) return
@@ -136,6 +151,44 @@ export default function ScheduleGrid({
       window.removeEventListener('touchend', onUp)
     }
   }, [drag, onResizeTask, SNAP_PX])
+
+  useEffect(() => {
+    if (!moveDrag) return
+    function onMove(ev: MouseEvent | TouchEvent) {
+      if (!moveDrag) return
+      const clientY = 'touches' in ev ? ev.touches[0]?.clientY ?? moveDrag.startY : ev.clientY
+      const dy = clientY - moveDrag.startY
+      const delta = Math.round(dy / SNAP_PX)
+      const isDragging = moveDrag.isDragging || Math.abs(dy) > DRAG_THRESHOLD_PX
+      if (delta !== moveDrag.deltaHalfHours || isDragging !== moveDrag.isDragging) {
+        setMoveDrag({ ...moveDrag, deltaHalfHours: delta, isDragging })
+      }
+    }
+    function onUp() {
+      if (!moveDrag) return
+      const { taskId, deltaHalfHours, isDragging } = moveDrag
+      setMoveDrag(null)
+      if (isDragging) {
+        if (deltaHalfHours !== 0 && onMoveTask) {
+          dragOccurredRef.current = true
+          onMoveTask(taskId, deltaHalfHours * 0.5)
+        }
+        // Even if delta=0 (no net movement), mark as drag so click doesn't double-fire
+        if (isDragging) dragOccurredRef.current = true
+      }
+      // If !isDragging: it was a plain click — let the td onClick handle selection naturally
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    window.addEventListener('touchmove', onMove)
+    window.addEventListener('touchend', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('touchmove', onMove)
+      window.removeEventListener('touchend', onUp)
+    }
+  }, [moveDrag, onMoveTask, SNAP_PX, DRAG_THRESHOLD_PX])
 
   const todayStr = useMemo(() => isoDate(new Date()), [])
 
@@ -657,27 +710,46 @@ export default function ScheduleGrid({
                           // Edit buttons — shown inside the selected card in builderMode
                           const showEditBar = builderMode && isSelected && (onMoveTask || onResizeTask || onResizeTaskStart || onDeleteTask)
 
+                          const canMoveDrag = builderMode && !!onMoveTask
                           return (
                             <td
                               key={col}
                               rowSpan={rowSpan}
                               className={`border border-slate-200 p-1 align-top h-8 relative ${onSelectTask ? 'cursor-pointer' : ''}`}
-                              onClick={onSelectTask ? () => onSelectTask(task.id) : undefined}
+                              onClick={onSelectTask ? () => {
+                                if (dragOccurredRef.current) { dragOccurredRef.current = false; return }
+                                onSelectTask(task.id)
+                              } : undefined}
                             >
                               {taskNowPct && (
                                 <div className="absolute left-0 right-0 pointer-events-none z-20" style={{ top: taskNowPct }}>
                                   <div className="border-t-2 border-dashed border-red-400 opacity-50" />
                                 </div>
                               )}
-                              {/* Live drag preview */}
+                              {/* Live resize drag preview */}
                               {drag?.taskId === task.id && drag.deltaHalfHours !== 0 && (
                                 <div className="absolute inset-x-1 top-1 bottom-1 pointer-events-none z-30 rounded-md border-2 border-dashed border-blue-500 bg-blue-100/50 flex items-center justify-center text-xs font-bold text-blue-800">
                                   {drag.deltaHalfHours > 0 ? '+' : ''}{(drag.deltaHalfHours * 0.5).toFixed(1)}ש
                                 </div>
                               )}
+                              {/* Live move drag preview */}
+                              {moveDrag?.taskId === task.id && moveDrag.isDragging && (
+                                <div className="absolute inset-x-1 top-1 bottom-1 pointer-events-none z-30 rounded-md border-2 border-dashed border-green-500 bg-green-100/50 flex items-center justify-center text-xs font-bold text-green-800">
+                                  {moveDrag.deltaHalfHours > 0 ? '+' : ''}{moveDrag.deltaHalfHours !== 0 ? (moveDrag.deltaHalfHours * 0.5).toFixed(1) + 'ש' : '↕'}
+                                </div>
+                              )}
                               <div
-                                className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition relative ${cardExtraClass}`}
+                                className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition relative ${cardExtraClass} ${canMoveDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
                                 style={cardStyle}
+                                onMouseDown={canMoveDrag ? (e: React.MouseEvent) => {
+                                  e.preventDefault()
+                                  setMoveDrag({ taskId: task.id, startY: e.clientY, deltaHalfHours: 0, isDragging: false })
+                                } : undefined}
+                                onTouchStart={canMoveDrag ? (e: React.TouchEvent) => {
+                                  const t = e.touches[0]
+                                  if (!t) return
+                                  setMoveDrag({ taskId: task.id, startY: t.clientY, deltaHalfHours: 0, isDragging: false })
+                                } : undefined}
                               >
                                 {/* Single resize handle at the bottom — drag to change end time (snaps to 30 min) */}
                                 {builderMode && isSelected && onResizeTask && (
