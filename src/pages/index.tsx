@@ -258,6 +258,7 @@ export default function HomePage() {
             myTasksOnly={myTasksOnly}
             dayStartHour={currentSchedule?.day_start_hour ?? 2}
             homeLeaveHour={currentSchedule?.home_leave_hour}
+            showAllDays
           />
       }
 

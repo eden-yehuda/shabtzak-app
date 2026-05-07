@@ -26,6 +26,8 @@ interface Props {
   onPairSoldiers?: (taskId: string, soldierIdA: string, soldierIdB: string) => void
   onUnpairSoldier?: (taskId: string, soldierId: string) => void
   onDeleteColumn?: (taskType: string) => void
+  columnOrder?: string[]                          // custom column order (set by user drag)
+  onReorderColumns?: (newOrder: string[]) => void // fires when user drags columns
 }
 
 // Visual order right-to-left (RTL)
@@ -84,7 +86,7 @@ export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
   currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, showAllDays, onSelectTask, onRemoveSoldier, onEditAssignmentNote, onToggleActingCommander,
   onMoveTask, onResizeTask, onResizeTaskStart, onDeleteTask, onMoveTaskToSlot, onCreateTaskAtSlot,
-  onPairSoldiers, onUnpairSoldier, onDeleteColumn,
+  onPairSoldiers, onUnpairSoldier, onDeleteColumn, columnOrder, onReorderColumns,
 }: Props) {
   const DAY_START_HOUR = dayStartHour
   // HOME_LEAVE_START: when soldiers swap (depart/return). Defaults to DAY_START_HOUR.
@@ -98,6 +100,23 @@ export default function ScheduleGrid({
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
   const [now, setNow] = useState(() => new Date())
   const [pairingCandidate, setPairingCandidate] = useState<{ taskId: string; soldierId: string } | null>(null)
+
+  // Column drag-to-reorder state (builder mode only)
+  const [dragColType, setDragColType] = useState<string | null>(null)
+  const [dragOverColType, setDragOverColType] = useState<string | null>(null)
+
+  function handleColDrop(dropOnCol: string) {
+    if (!dragColType || dragColType === dropOnCol) { setDragColType(null); setDragOverColType(null); return }
+    const newOrder = [...allColumns]
+    const fromIdx = newOrder.indexOf(dragColType)
+    const toIdx   = newOrder.indexOf(dropOnCol)
+    if (fromIdx === -1 || toIdx === -1) return
+    newOrder.splice(fromIdx, 1)
+    newOrder.splice(toIdx, 0, dragColType)
+    onReorderColumns?.(newOrder)
+    setDragColType(null)
+    setDragOverColType(null)
+  }
 
   // Drag-to-resize. Row height = 32px (h-8). Snap to 0.5h → 16px per snap unit.
   const ROW_HEIGHT_PX = 32
@@ -218,7 +237,8 @@ export default function ScheduleGrid({
     }
 
     const typeSet = new Set(tasks.map(t => t.task_type))
-    const cols = COLUMN_ORDER.filter(c => typeSet.has(c))
+    const orderList = columnOrder ?? COLUMN_ORDER
+    const cols = orderList.filter(c => typeSet.has(c))
     typeSet.forEach(c => { if (!cols.includes(c)) cols.push(c) })
 
     // In soldier-facing view: hide a day only if NO task on that day has any assignments at all.
@@ -261,7 +281,7 @@ export default function ScheduleGrid({
     if (cols.length === 0) cols.push(...COLUMN_ORDER)
 
     return { days: sortedDays, allColumns: cols }
-  }, [tasks, assignments, finalLeave, myTasksOnly, currentSoldierId, builderMode, showAllDays])
+  }, [tasks, assignments, finalLeave, myTasksOnly, currentSoldierId, builderMode, showAllDays, columnOrder])
 
   // Time line: show only when nowMilitaryDay is actually in the grid.
   // If we're before the schedule starts (e.g. 00:31 on day 1 when schedule starts at 14:00),
@@ -527,8 +547,21 @@ export default function ScheduleGrid({
                   <th className="border border-slate-300 bg-slate-700 text-white px-1 py-1.5 text-center text-xs font-bold rounded-tr-sm">שעה</th>
                   {columns.map(col => {
                     const cs = COL_STYLE[col] ?? DEFAULT_COL_STYLE
+                    const isDragOver = dragOverColType === col && dragColType !== col
                     return (
-                      <th key={col} className="border border-slate-300 px-1 py-1.5 text-center text-xs font-bold relative" style={{ backgroundColor: cs.headBg, color: cs.headText }}>
+                      <th
+                        key={col}
+                        className={`border border-slate-300 px-1 py-1.5 text-center text-xs font-bold relative select-none transition-all ${isDragOver ? 'ring-2 ring-white ring-inset opacity-80' : ''}`}
+                        style={{ backgroundColor: cs.headBg, color: cs.headText, cursor: builderMode && onReorderColumns ? 'grab' : 'default' }}
+                        draggable={!!(builderMode && onReorderColumns)}
+                        onDragStart={builderMode && onReorderColumns ? (e) => { e.dataTransfer.effectAllowed = 'move'; setDragColType(col) } : undefined}
+                        onDragOver={builderMode && onReorderColumns ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverColType(col) } : undefined}
+                        onDrop={builderMode && onReorderColumns ? (e) => { e.preventDefault(); handleColDrop(col) } : undefined}
+                        onDragEnd={builderMode && onReorderColumns ? () => { setDragColType(null); setDragOverColType(null) } : undefined}
+                      >
+                        {builderMode && onReorderColumns && (
+                          <span className="absolute top-0.5 right-0.5 text-[8px] opacity-30 select-none pointer-events-none">⠿</span>
+                        )}
                         {col}
                         {builderMode && onDeleteColumn && (
                           <button
