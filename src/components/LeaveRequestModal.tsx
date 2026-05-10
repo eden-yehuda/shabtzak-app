@@ -15,6 +15,10 @@ interface Props {
 
 const DAY_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
 
+// Special dates
+const SHAVUOT = '2026-05-22'  // חג שבועות — treated like Fri/Sat
+const COMPANY_DAY = '2026-05-17'  // יום פלוגה — no leave except exceptions
+
 function daysInRange(from: string, to: string): string[] {
   const days: string[] = []
   const cur = new Date(from + 'T12:00:00')
@@ -26,6 +30,65 @@ function daysInRange(from: string, to: string): string[] {
   return days
 }
 
+function isWeekendDay(date: string): boolean {
+  if (date === SHAVUOT) return true
+  const dow = new Date(date + 'T12:00:00').getDay()
+  return dow === 5 || dow === 6 // Fri or Sat
+}
+
+function isSaturday(date: string): boolean {
+  return new Date(date + 'T12:00:00').getDay() === 6
+}
+
+function isFriday(date: string): boolean {
+  if (date === SHAVUOT) return true
+  return new Date(date + 'T12:00:00').getDay() === 5
+}
+
+// Disclaimer text
+const DISCLAIMER_RULES = [
+  { icon: '📅', text: 'לבחור 6 ימים מקסימום. שבת אחת ושישי אחד (או חג) מותר ברצף.' },
+  { icon: '🔗', text: 'יש לרשום לפחות יומיים ברצף כדי לא ליצור בלאגן של יוצאים חוזרים.' },
+  { icon: '✡️', text: 'שישי 22/5 הוא חג שבועות — מתייחסים אליו כמו שישי או שבת.' },
+  { icon: '🪖', text: 'יום ראשון 17/5 הוא יום פלוגה (אימון + ערב). לא יוצאים למעט חריגים.' },
+]
+
+function computeWarnings(selectedDates: string[], maxDays: number): string[] {
+  const warnings: string[] = []
+  if (selectedDates.length === 0) return warnings
+
+  // 1. Max days
+  if (maxDays > 0 && selectedDates.length > maxDays) {
+    warnings.push(`שים לב: צריך לבחור ${maxDays} ימים מקסימום`)
+  }
+
+  // 2. At least 2 consecutive days
+  const sorted = [...selectedDates].sort()
+  let hasConsecutive = false
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const d1 = new Date(sorted[i] + 'T12:00:00').getTime()
+    const d2 = new Date(sorted[i + 1] + 'T12:00:00').getTime()
+    if (Math.round((d2 - d1) / 86400000) === 1) { hasConsecutive = true; break }
+  }
+  if (sorted.length >= 2 && !hasConsecutive) {
+    warnings.push('יש לבחור לפחות יומיים ברצף')
+  }
+
+  // 3. Only one weekend (max 1 Friday incl. Shavuot + max 1 Saturday)
+  const fridayCount = selectedDates.filter(isFriday).length
+  const saturdayCount = selectedDates.filter(isSaturday).length
+  if (fridayCount > 1 || saturdayCount > 1) {
+    warnings.push('אפשר לבחור רק סופ"ש אחד ולא שניים')
+  }
+
+  // 4. Company day
+  if (selectedDates.includes(COMPANY_DAY)) {
+    warnings.push('ב-17.5 תאושר יציאה רק לחריגים')
+  }
+
+  return warnings
+}
+
 export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose, defaultSoldierId }: Props) {
   const [soldierId, setSoldierId] = useState(defaultSoldierId ?? '')
   const [search, setSearch] = useState(() =>
@@ -33,6 +96,7 @@ export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose
   )
   const [showDropdown, setShowDropdown] = useState(false)
   const [toggling, setToggling] = useState(false)
+  const [showDisclaimer, setShowDisclaimer] = useState(true)
 
   // Real-time: all pending (non-final) requests in survey range
   const [allRequests, setAllRequests] = useState<LeaveRequest[]>([])
@@ -109,7 +173,8 @@ export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose
   )
 
   const myCount = Object.keys(myRequests).length
-  const overQuota = maxDays > 0 && myCount > maxDays
+  const selectedDates = Object.keys(myRequests)
+  const warnings = useMemo(() => computeWarnings(selectedDates, maxDays), [selectedDates, maxDays])
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex flex-col" dir="rtl">
@@ -120,6 +185,33 @@ export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose
           <h2 className="text-base font-bold text-navy">📅 סקר יציאות</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2">×</button>
         </div>
+
+        {/* Disclaimer overlay */}
+        {showDisclaimer && (
+          <div className="absolute inset-0 z-50 bg-white flex flex-col" dir="rtl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+              <h2 className="text-base font-bold text-navy">📅 סקר יציאות — הנחיות</h2>
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2">×</button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-5 flex flex-col gap-3">
+              {DISCLAIMER_RULES.map((r, i) => (
+                <div key={i} className="flex gap-3 items-start bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                  <span className="text-2xl shrink-0">{r.icon}</span>
+                  <p className="text-sm text-slate-800 leading-snug">{r.text}</p>
+                </div>
+              ))}
+              <p className="text-xs text-slate-400 text-center mt-2">יש לאשר שקראת את ההנחיות לפני מילוי הסקר</p>
+            </div>
+            <div className="px-4 py-4 border-t border-slate-200 bg-white">
+              <button
+                onClick={() => setShowDisclaimer(false)}
+                className="w-full bg-navy text-white rounded-xl py-3 font-bold text-sm"
+              >
+                הבנתי, ממשיכים ✓
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Soldier selector */}
         <div className="px-4 py-3 border-b border-slate-100 shrink-0">
@@ -151,7 +243,7 @@ export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose
             </div>
             {soldierId && maxDays > 0 && (
               <span className={`text-xs font-bold px-2 py-1 rounded-full shrink-0 ${
-                overQuota ? 'bg-red-100 text-red-700' : myCount > 0 ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+                myCount > maxDays ? 'bg-red-100 text-red-700' : myCount > 0 ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
               }`}>
                 {myCount}/{maxDays}
               </span>
@@ -160,8 +252,17 @@ export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose
           {soldierId && (
             <p className="text-xs text-slate-400 mt-1.5 pr-1">לחץ על ימים בשורה שלך (מסומנת) כדי לסמן/לבטל בקשת יציאה</p>
           )}
-          {overQuota && (
-            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-2 py-1 mt-1.5">⚠️ ביקשת יותר מ-{maxDays} ימים — הבקשה תועבר לבדיקה</p>
+
+          {/* Real-time validation warnings */}
+          {soldierId && warnings.length > 0 && (
+            <div className="mt-2 flex flex-col gap-1">
+              {warnings.map((w, i) => (
+                <p key={i} className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 flex items-start gap-1.5">
+                  <span className="shrink-0">⚠️</span>
+                  <span>{w}</span>
+                </p>
+              ))}
+            </div>
           )}
         </div>
 
@@ -172,7 +273,7 @@ export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose
           </div>
         ) : (
           <div className="flex-1 overflow-auto">
-            <table className="text-xs border-collapse" style={{ direction: 'rtl', minWidth: '100%' }}>
+            <table className="text-xs" style={{ direction: 'rtl', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
               <thead className="sticky top-0 z-20">
                 <tr>
                   <th className="sticky right-0 z-30 bg-slate-700 text-white px-3 py-2 text-right font-semibold border-b border-slate-600 min-w-[110px] whitespace-nowrap">
@@ -180,10 +281,17 @@ export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose
                   </th>
                   {days.map(d => {
                     const date = new Date(d + 'T12:00:00')
+                    const isSpecial = d === SHAVUOT
+                    const isBlocked = d === COMPANY_DAY
+                    const isWknd = isWeekendDay(d)
                     return (
-                      <th key={d} className="bg-slate-700 text-white px-2 py-2 text-center font-semibold border-b border-slate-600 min-w-[48px]">
+                      <th key={d} className={`text-white px-2 py-2 text-center font-semibold border-b border-slate-600 min-w-[48px] ${
+                        isBlocked ? 'bg-red-800' : isSpecial ? 'bg-purple-700' : isWknd ? 'bg-slate-600' : 'bg-slate-700'
+                      }`}>
                         <div>{DAY_SHORT[date.getDay()]}</div>
-                        <div className="text-[10px] text-slate-300 font-normal">{date.getDate()}/{date.getMonth() + 1}</div>
+                        <div className="text-[10px] font-normal opacity-80">{date.getDate()}/{date.getMonth() + 1}</div>
+                        {isSpecial && <div className="text-[9px] text-purple-200">חג</div>}
+                        {isBlocked && <div className="text-[9px] text-red-200">פלוגה</div>}
                       </th>
                     )
                   })}
@@ -194,14 +302,14 @@ export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose
                   const isMe = s.id === soldierId
                   const soldierDays = requestsBySoldier[s.id] ?? new Set()
                   return (
-                    <tr key={s.id} className={`border-b ${
-                      isMe
-                        ? 'bg-navy/8 border-navy/20'
-                        : idx % 2 === 0 ? 'bg-white border-slate-100' : 'bg-slate-50/60 border-slate-100'
-                    }`}>
+                    <tr key={s.id} className={isMe ? '' : ''}>
                       {/* Name cell */}
-                      <td className={`sticky right-0 z-10 px-3 py-2 font-medium whitespace-nowrap border-l border-slate-200 ${
-                        isMe ? 'bg-blue-50 text-navy font-bold' : 'bg-white text-slate-700'
+                      <td className={`sticky right-0 z-10 px-3 py-2 font-medium whitespace-nowrap border-b border-l ${
+                        isMe
+                          ? 'bg-blue-50 text-navy font-bold border-navy/20 border-l-navy/30'
+                          : idx % 2 === 0
+                            ? 'bg-white text-slate-700 border-slate-100'
+                            : 'bg-slate-50 text-slate-700 border-slate-100'
                       }`}>
                         <div className="flex items-center gap-1">
                           {isMe && (
@@ -215,15 +323,22 @@ export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose
                       {/* Day cells */}
                       {days.map(d => {
                         const selected = soldierDays.has(d)
+                        const isBlocked = d === COMPANY_DAY
+                        const rowBg = isMe
+                          ? 'bg-blue-50 border-navy/10'
+                          : idx % 2 === 0 ? 'bg-white border-slate-100' : 'bg-slate-50 border-slate-100'
+
                         if (isMe) {
                           return (
-                            <td key={d} className="px-1 py-1 text-center">
+                            <td key={d} className={`px-1 py-1 text-center border-b ${rowBg}`}>
                               <button
                                 onClick={() => toggleDay(d)}
                                 disabled={toggling}
                                 className={`w-10 h-10 rounded-xl text-sm font-bold transition-all active:scale-95 ${
                                   selected
-                                    ? 'bg-navy text-white shadow-sm'
+                                    ? isBlocked
+                                      ? 'bg-red-500 text-white shadow-sm'
+                                      : 'bg-navy text-white shadow-sm'
                                     : 'bg-slate-100 text-slate-300 hover:bg-navy/20 hover:text-navy'
                                 }`}
                               >
@@ -233,7 +348,7 @@ export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose
                           )
                         }
                         return (
-                          <td key={d} className="px-1 py-1 text-center">
+                          <td key={d} className={`px-1 py-1 text-center border-b ${rowBg}`}>
                             {selected
                               ? <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center mx-auto text-sm">✓</div>
                               : <div className="w-10 h-10" />
