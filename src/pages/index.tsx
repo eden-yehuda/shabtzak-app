@@ -106,12 +106,8 @@ function SOSModal({ tasks, assignments, soldiers, finalLeave, onClose }: {
             : (
               <div className="flex flex-wrap gap-2">
                 {freeSoldiers.map(s => (
-                  <span key={s.id} className={`px-3 py-1.5 rounded-xl text-sm font-semibold shadow ${
-                    s.is_commander
-                      ? 'bg-white text-emerald-800 ring-2 ring-yellow-400'
-                      : 'bg-emerald-100 text-emerald-900'
-                  }`}>
-                    {s.is_commander && '★ '}{s.full_name}
+                  <span key={s.id} className="px-3 py-1.5 rounded-xl text-sm font-semibold shadow bg-emerald-100 text-emerald-900">
+                    {s.full_name}
                   </span>
                 ))}
               </div>
@@ -276,6 +272,16 @@ export default function HomePage() {
   const currentSchedule = schedules[scheduleIdx] ?? null
   // Soldier view reads the LATEST PUBLISHED SNAPSHOT — not the live working copy
   const { tasks, assignments } = usePublishedSchedule(currentSchedule?.id ?? null)
+
+  // SOS always uses the schedule that contains NOW — regardless of which week the user is browsing
+  const sosSchedule = useMemo(() => {
+    const n = new Date()
+    return schedules.find(s =>
+      s.start_datetime && s.end_datetime &&
+      s.start_datetime <= n && s.end_datetime >= n
+    ) ?? schedules[0] ?? null
+  }, [schedules])
+  const { tasks: sosTasks, assignments: sosAssignments } = usePublishedSchedule(sosSchedule?.id ?? null)
 
   const filteredSoldiers = useMemo(() =>
     soldiers.filter(s => s.full_name.includes(search)).slice(0, 20),
@@ -471,8 +477,8 @@ export default function HomePage() {
 
       {showSOS && (
         <SOSModal
-          tasks={tasks}
-          assignments={assignments}
+          tasks={sosTasks}
+          assignments={sosAssignments}
           soldiers={soldiers}
           finalLeave={finalLeave}
           onClose={() => setShowSOS(false)}
