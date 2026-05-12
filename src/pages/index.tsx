@@ -66,27 +66,23 @@ function SOSModal({ tasks, assignments, soldiers, finalLeave, homeLeaveHour = 6,
 
   const activeSoldiers = useMemo(() => soldiers.filter(s => s.is_active), [soldiers])
 
-  // Still at home: has today's leave AND hasn't returned yet (current hour < swap hour)
-  const stillAtHomeIds = useMemo(() => new Set(
-    [...leaveTodayIds].filter(id => currentHour < homeLeaveHour)
-  ), [leaveTodayIds, currentHour, homeLeaveHour])
-
-  // Returning today: had leave yesterday (not today) AND hasn't arrived yet
-  const returningIds = useMemo(() => new Set(
-    [...leaveYesterdayIds].filter(id => !leaveTodayIds.has(id) && currentHour < homeLeaveHour)
-  ), [leaveYesterdayIds, leaveTodayIds, currentHour, homeLeaveHour])
-
-  // On leave today (including those who already returned)
+  // Approved leave today = at home, period (homeLeaveHour doesn't change this)
   const onLeaveIds = leaveTodayIds
 
+  // Free = active, not busy, not on leave today
   const freeSoldiers = useMemo(() =>
-    activeSoldiers.filter(s => !busySoldierIds.has(s.id) && !stillAtHomeIds.has(s.id)),
-    [activeSoldiers, busySoldierIds, stillAtHomeIds]
+    activeSoldiers.filter(s => !busySoldierIds.has(s.id) && !onLeaveIds.has(s.id)),
+    [activeSoldiers, busySoldierIds, onLeaveIds]
   )
   const leaveSoldiers = useMemo(() =>
     activeSoldiers.filter(s => onLeaveIds.has(s.id)),
     [activeSoldiers, onLeaveIds]
   )
+
+  // "בדרך חזרה": free soldier who had leave yesterday and homeLeaveHour hasn't passed yet
+  const returningIds = useMemo(() => new Set(
+    [...leaveYesterdayIds].filter(id => !leaveTodayIds.has(id) && currentHour < homeLeaveHour)
+  ), [leaveYesterdayIds, leaveTodayIds, currentHour, homeLeaveHour])
 
   // Per-task: list of soldiers assigned
   const taskGroups = useMemo(() =>
