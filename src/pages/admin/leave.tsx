@@ -202,11 +202,6 @@ export default function AdminLeavePage() {
     await setDoc(doc(db, 'settings', 'leave_survey'), { is_open: false, from: survey?.from ?? '', to: survey?.to ?? '', max_days: survey?.max_days ?? 3 })
   }
 
-  // Date pagination: 14-day windows. Default anchor = first day of survey (or today).
-  // The V on each cell is bound to (soldier_id, ISO date) — independent of which window is shown.
-  const [windowStart, setWindowStart] = useState<string>('') // YYYY-MM-DD; '' → use default
-  const WINDOW_DAYS = 14
-
   function isoDateLocal(d: Date) {
     return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
   }
@@ -216,26 +211,21 @@ export default function AdminLeavePage() {
     return isoDateLocal(d)
   }
 
-  // Compute the actual start of the visible window
-  const effectiveWindowStart = useMemo(() => {
-    if (windowStart) return windowStart
+  const defaultFrom = useMemo(() => {
     if (survey?.is_open && survey.from) return survey.from
     return isoDateLocal(new Date())
-  }, [windowStart, survey])
+  }, [survey])
+  const defaultTo = useMemo(() => shiftDate(defaultFrom, 13), [defaultFrom])
 
-  const dates = useMemo(() => {
-    const out: string[] = []
-    let d = effectiveWindowStart
-    for (let i = 0; i < WINDOW_DAYS; i++) {
-      out.push(d)
-      d = shiftDate(d, 1)
-    }
-    return out
-  }, [effectiveWindowStart])
+  const [rangeFrom, setRangeFrom] = useState<string>('')
+  const [rangeTo, setRangeTo] = useState<string>('')
 
-  function pagePrev() { setWindowStart(shiftDate(effectiveWindowStart, -WINDOW_DAYS)) }
-  function pageNext() { setWindowStart(shiftDate(effectiveWindowStart, WINDOW_DAYS)) }
-  function pageToday() { setWindowStart('') }
+  const effectiveFrom = rangeFrom || defaultFrom
+  const effectiveTo = rangeTo || defaultTo
+
+  const dates = useMemo(() => daysInRange(effectiveFrom, effectiveTo), [effectiveFrom, effectiveTo])
+
+  function pageToday() { setRangeFrom(''); setRangeTo('') }
 
   const sorted = useMemo(() =>
     [...soldiers].filter(s => s.is_active).sort((a, b) => a.full_name.localeCompare(b.full_name, 'he')),
@@ -563,25 +553,23 @@ export default function AdminLeavePage() {
         </div>
       )}
 
-      {/* Date pagination */}
-      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap" dir="rtl">
-        <div className="flex items-center gap-2">
-          <button onClick={pagePrev}
-            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm hover:border-navy hover:text-navy transition">
-            ← קודם
-          </button>
-          <button onClick={pageToday}
-            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm hover:border-navy hover:text-navy transition">
-            היום
-          </button>
-          <button onClick={pageNext}
-            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm hover:border-navy hover:text-navy transition">
-            הבא →
-          </button>
-        </div>
-        <div className="text-sm text-slate-600 font-semibold">
-          {dates[0]} ← {dates[dates.length - 1]} ({WINDOW_DAYS} ימים)
-        </div>
+      {/* Date range picker */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap" dir="rtl">
+        <span className="text-sm text-slate-600 font-semibold">הצג טווח:</span>
+        <input type="date" value={effectiveFrom}
+          onChange={e => setRangeFrom(e.target.value)}
+          className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+        <span className="text-slate-400 text-sm">עד</span>
+        <input type="date" value={effectiveTo} min={effectiveFrom}
+          onChange={e => setRangeTo(e.target.value)}
+          className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+        <button onClick={pageToday}
+          className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm hover:border-navy hover:text-navy transition">
+          איפוס
+        </button>
+        {dates.length > 0 && (
+          <span className="text-xs text-slate-400 mr-1">({dates.length} ימים)</span>
+        )}
       </div>
 
       {/* Legend */}

@@ -14,21 +14,24 @@ import type { Schedule, Task, Assignment, Soldier, LeaveRequest } from '@/types'
 interface SurveySettings { is_open: boolean; from: string; to: string; max_days: number }
 
 // ── SOS Modal ────────────────────────────────────────────────────────────────
-function SOSModal({ tasks, assignments, soldiers, finalLeave, onClose }: {
+function SOSModal({ tasks, assignments, soldiers, finalLeave, homeLeaveHour = 6, onClose }: {
   tasks: Task[]
   assignments: Assignment[]
   soldiers: Soldier[]
   finalLeave: LeaveRequest[]
+  homeLeaveHour?: number
   onClose: () => void
 }) {
   const [now] = useState(() => new Date())
   const horizon = useMemo(() => new Date(now.getTime() + 12 * 3600 * 1000), [now])
 
-  // YYYY-MM-DD for today (local)
-  const todayStr = useMemo(() => {
-    const d = now
+  function isoDateLocal(d: Date) {
     return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-')
-  }, [now])
+  }
+
+  const todayStr = isoDateLocal(now)
+  const yesterdayStr = isoDateLocal(new Date(now.getTime() - 86400000))
+  const currentHour = now.getHours()
 
   function fmtHour(d: Date) { return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` }
   function hoursLabel(ms: number) {
@@ -44,7 +47,7 @@ function SOSModal({ tasks, assignments, soldiers, finalLeave, onClose }: {
     [tasks, now, horizon]
   )
 
-  // Soldiers busy in the next 12h (have assignment on an active task)
+  // Soldiers busy in the next 12h
   const busySoldierIds = useMemo(() => {
     const s = new Set<string>()
     for (const a of assignments) {
@@ -53,14 +56,20 @@ function SOSModal({ tasks, assignments, soldiers, finalLeave, onClose }: {
     return s
   }, [assignments, activeTasks])
 
-  // On leave today
-  const onLeaveIds = useMemo(() => new Set(
+  const leaveTodayIds = useMemo(() => new Set(
     finalLeave.filter(r => r.date === todayStr && r.status === 'approved').map(r => r.soldier_id)
   ), [finalLeave, todayStr])
 
+  const leaveYesterdayIds = useMemo(() => new Set(
+    finalLeave.filter(r => r.date === yesterdayStr && r.status === 'approved').map(r => r.soldier_id)
+  ), [finalLeave, yesterdayStr])
+
   const activeSoldiers = useMemo(() => soldiers.filter(s => s.is_active), [soldiers])
 
-  // "In the air" = active, not on leave, not assigned to any task in next 12h
+  // Approved leave today = at home, period (homeLeaveHour doesn't change this)
+  const onLeaveIds = leaveTodayIds
+
+  // Free = active, not busy, not on leave today
   const freeSoldiers = useMemo(() =>
     activeSoldiers.filter(s => !busySoldierIds.has(s.id) && !onLeaveIds.has(s.id)),
     [activeSoldiers, busySoldierIds, onLeaveIds]
@@ -69,6 +78,11 @@ function SOSModal({ tasks, assignments, soldiers, finalLeave, onClose }: {
     activeSoldiers.filter(s => onLeaveIds.has(s.id)),
     [activeSoldiers, onLeaveIds]
   )
+
+  // "בדרך חזרה": free soldier who had leave yesterday and homeLeaveHour hasn't passed yet
+  const returningIds = useMemo(() => new Set(
+    [...leaveYesterdayIds].filter(id => !leaveTodayIds.has(id) && currentHour < homeLeaveHour)
+  ), [leaveYesterdayIds, leaveTodayIds, currentHour, homeLeaveHour])
 
   // Per-task: list of soldiers assigned
   const taskGroups = useMemo(() =>
@@ -106,12 +120,15 @@ function SOSModal({ tasks, assignments, soldiers, finalLeave, onClose }: {
             : (
               <div className="flex flex-wrap gap-2">
                 {freeSoldiers.map(s => (
-                  <span key={s.id} className={`px-3 py-1.5 rounded-xl text-sm font-semibold shadow ${
-                    s.is_commander
-                      ? 'bg-white text-emerald-800 ring-2 ring-yellow-400'
+                  <span key={s.id} className={`px-3 py-1.5 rounded-xl text-sm font-semibold shadow flex items-center gap-1.5 ${
+                    returningIds.has(s.id)
+                      ? 'bg-yellow-100 text-yellow-900'
                       : 'bg-emerald-100 text-emerald-900'
                   }`}>
-                    {s.is_commander && '★ '}{s.full_name}
+                    {s.full_name}
+                    {returningIds.has(s.id) && (
+                      <span className="text-[10px] bg-yellow-300 text-yellow-900 px-1 py-0.5 rounded font-bold">בדרך</span>
+                    )}
                   </span>
                 ))}
               </div>
@@ -276,6 +293,16 @@ export default function HomePage() {
   const currentSchedule = schedules[scheduleIdx] ?? null
   // Soldier view reads the LATEST PUBLISHED SNAPSHOT — not the live working copy
   const { tasks, assignments } = usePublishedSchedule(currentSchedule?.id ?? null)
+
+  // SOS always uses the schedule that contains NOW — regardless of which week the user is browsing
+  const sosSchedule = useMemo(() => {
+    const n = new Date()
+    return schedules.find(s =>
+      s.start_datetime && s.end_datetime &&
+      s.start_datetime <= n && s.end_datetime >= n
+    ) ?? schedules[0] ?? null
+  }, [schedules])
+  const { tasks: sosTasks, assignments: sosAssignments } = usePublishedSchedule(sosSchedule?.id ?? null)
 
   const filteredSoldiers = useMemo(() =>
     soldiers.filter(s => s.full_name.includes(search)).slice(0, 20),
@@ -445,7 +472,6 @@ export default function HomePage() {
             myTasksOnly={myTasksOnly}
             dayStartHour={currentSchedule?.day_start_hour ?? 2}
             homeLeaveHour={currentSchedule?.home_leave_hour}
-            showAllDays
           />
       }
 
@@ -458,6 +484,7 @@ export default function HomePage() {
           from={survey.from}
           to={survey.to}
           maxDays={survey.max_days ?? 0}
+          defaultSoldierId={selectedSoldierId}
           onClose={() => setShowLeave(false)}
         />
       )}
@@ -471,10 +498,11 @@ export default function HomePage() {
 
       {showSOS && (
         <SOSModal
-          tasks={tasks}
-          assignments={assignments}
+          tasks={sosTasks}
+          assignments={sosAssignments}
           soldiers={soldiers}
           finalLeave={finalLeave}
+          homeLeaveHour={sosSchedule?.home_leave_hour ?? sosSchedule?.day_start_hour ?? 6}
           onClose={() => setShowSOS(false)}
         />
       )}
@@ -639,11 +667,11 @@ function AllLeavesModal({ soldiers, finalLeave, onClose }: {
                   <tbody>
                     {sortedSoldiers.map(s => {
                       const count = dates.filter(d => onLeave.has(`${s.id}|${d}`)).length
-                      if (count === 0) return null
                       return (
-                        <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
+                        <tr key={s.id} className={`border-b border-slate-100 hover:bg-slate-50 ${count === 0 ? 'opacity-40' : ''}`}>
                           <td className="px-3 py-1.5 font-medium sticky right-0 bg-white whitespace-nowrap border-l border-slate-200">
-                            <button onClick={() => setSelectedSoldierId(s.id)} className="hover:text-navy hover:underline">
+                            <button onClick={() => count > 0 ? setSelectedSoldierId(s.id) : undefined}
+                              className={count > 0 ? 'hover:text-navy hover:underline' : 'cursor-default'}>
                               {s.full_name}
                             </button>
                           </td>
@@ -654,11 +682,31 @@ function AllLeavesModal({ soldiers, finalLeave, onClose }: {
                                 : <span className="text-slate-200 text-xs">—</span>}
                             </td>
                           ))}
-                          <td className="px-3 py-1.5 text-center font-bold sticky left-0 bg-white border-r border-slate-200">{count}</td>
+                          <td className="px-3 py-1.5 text-center font-bold sticky left-0 bg-white border-r border-slate-200">
+                            {count > 0 ? count : '—'}
+                          </td>
                         </tr>
                       )
                     })}
                   </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-100 font-semibold text-xs border-t-2 border-slate-300">
+                      <td className="px-3 py-2 sticky right-0 bg-slate-100 border-l border-slate-200 whitespace-nowrap">בבית</td>
+                      {dates.map(d => {
+                        const homeCount = sortedSoldiers.filter(s => onLeave.has(`${s.id}|${d}`)).length
+                        const total = sortedSoldiers.length
+                        return (
+                          <td key={d} className="px-1 py-2 text-center">
+                            {homeCount > 0
+                              ? <span className="text-blue-700 font-bold">{homeCount}</span>
+                              : <span className="text-slate-300">0</span>}
+                            <div className="text-[9px] text-slate-400">{total - homeCount} בבסיס</div>
+                          </td>
+                        )
+                      })}
+                      <td className="px-3 py-2 sticky left-0 bg-slate-100 border-r border-slate-200" />
+                    </tr>
+                  </tfoot>
                 </table>
               )
           )}

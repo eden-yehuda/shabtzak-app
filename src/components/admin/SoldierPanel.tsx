@@ -157,14 +157,38 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
   async function assign(soldierId: string) {
     if (!selectedTaskId || isSubmitting) return
     const already = assignments.some(a => a.task_id === selectedTaskId && a.soldier_id === soldierId)
-    if (!already) {
-      setIsSubmitting(true)
-      try {
-        await createAssignment(selectedTaskId, soldierId)
-        await onAssigned?.(selectedTaskId, soldierId)
-      } catch (err) { console.error(err) }
-      finally { setIsSubmitting(false) }
+    if (already) return
+
+    // Pre-assignment checks — collect warnings
+    const item = enriched.find(x => x.soldier.id === soldierId)
+    const warnings: string[] = []
+
+    if (item && selectedTask) {
+      // 1. Assigned during home leave
+      if (item.status.key === 'stayingHome') {
+        warnings.push('⚠️ החייל בבית באותו יום (יציאה מאושרת)')
+      }
+      // 2. Back-to-back (0h rest)
+      if (item.restHours !== null && item.restHours <= 0) {
+        warnings.push('⚠️ ברצף — החייל יוצא ממשימה ישירות לזו')
+      }
+      // 3. 8h-8h pattern (rest < 8h)
+      else if (item.restHours !== null && item.restHours < 8) {
+        warnings.push(`⚠️ רק ${item.restHours.toFixed(0)}ש׳ מנוחה מהמשימה הקודמת (8-8)`)
+      }
     }
+
+    if (warnings.length > 0) {
+      const proceed = window.confirm(`${warnings.join('\n')}\n\nלשבץ בכל זאת?`)
+      if (!proceed) return
+    }
+
+    setIsSubmitting(true)
+    try {
+      await createAssignment(selectedTaskId, soldierId)
+      await onAssigned?.(selectedTaskId, soldierId)
+    } catch (err) { console.error(err) }
+    finally { setIsSubmitting(false) }
   }
 
   // Task summary

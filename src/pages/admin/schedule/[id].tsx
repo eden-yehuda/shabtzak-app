@@ -93,6 +93,7 @@ export default function EditSchedule() {
   const [confirmPublish, setConfirmPublish] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [unpublishing, setUnpublishing] = useState(false)
+  const [publishFreeWarnings, setPublishFreeWarnings] = useState<string[]>([])
 
   // Bumping this state forces a re-validation (used by the "בדוק שוב" button)
   const [validationBump, setValidationBump] = useState(0)
@@ -682,18 +683,23 @@ export default function EditSchedule() {
             {errorCount > 0 ? `⛔ ${errorCount} שגיאות` : warnCount > 0 ? `⚠️ ${warnCount} אזהרות` : '✓ תקין'}
           </button>
 
-          <button onClick={runLlmCheck} disabled={llmLoading || tasks.length === 0}
-            className="border border-purple-300 text-purple-700 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40 hover:bg-purple-50 transition">
-            {llmLoading ? '🤖 בודק...' : llmChecked ? '🤖 ✓ נבדק' : '🤖 בדוק שבצ"ק'}
-          </button>
-
           <button onClick={() => setShowVersionsPanel(true)} disabled={publishedVersions.length === 0}
             className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-30 disabled:cursor-not-allowed"
             title={publishedVersions.length > 0 ? `${publishedVersions.length} גרסאות שמורות` : 'אין גרסאות מפורסמות עדיין'}>
             🕒 גרסאות {publishedVersions.length > 0 && `(${publishedVersions.length})`}
           </button>
 
-          <button onClick={() => setConfirmPublish(true)} disabled={publishing}
+          <button onClick={() => {
+            // Compute soldiers with zero assignments
+            const assignedIds = new Set(assignments.map(a => a.soldier_id))
+            const free = soldiers.filter(s => s.is_active && !assignedIds.has(s.id))
+            if (free.length > 0) {
+              setPublishFreeWarnings(free.map(s => s.full_name))
+            } else {
+              setPublishFreeWarnings([])
+            }
+            setConfirmPublish(true)
+          }} disabled={publishing}
             className={`rounded-xl px-4 py-2 text-sm font-semibold transition disabled:opacity-60 disabled:cursor-wait ${
               hasUnpublishedChanges ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
             }`}>
@@ -981,7 +987,9 @@ export default function EditSchedule() {
 
       {confirmPublish && (
         <ConfirmModal
-          message='לפרסם את השבצ"ק? החיילים יראו את כל הימים.'
+          message={publishFreeWarnings.length > 0
+            ? `⚠️ ${publishFreeWarnings.length} חיילים ללא שיבוצים:\n${publishFreeWarnings.join(', ')}\n\nלפרסם בכל זאת? החיילים יראו את כל הימים.`
+            : 'לפרסם את השבצ"ק? החיילים יראו את כל הימים.'}
           onConfirm={publish}
           onCancel={() => setConfirmPublish(false)}
         />
