@@ -133,6 +133,9 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
   function sortByAvailability(items: Item[], commandersFirst: boolean): Item[] {
     return [...items].sort((a, b) => {
       if (a.isAssignedToSelected !== b.isAssignedToSelected) return a.isAssignedToSelected ? -1 : 1
+      // Commanders always before non-commanders (primary sort after assigned)
+      if (commandersFirst && a.soldier.is_commander !== b.soldier.is_commander)
+        return a.soldier.is_commander ? -1 : 1
       const ra = availabilityRank(a)
       const rb = availabilityRank(b)
       if (ra !== rb) return ra - rb
@@ -140,11 +143,6 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
       const restA = a.restHours ?? Number.POSITIVE_INFINITY
       const restB = b.restHours ?? Number.POSITIVE_INFINITY
       if (restA !== restB) return restB - restA
-      // Commander tie-breaker per section
-      if (a.soldier.is_commander !== b.soldier.is_commander) {
-        if (commandersFirst) return a.soldier.is_commander ? -1 : 1
-        return a.soldier.is_commander ? 1 : -1
-      }
       return a.taskCount - b.taskCount
     })
   }
