@@ -29,6 +29,7 @@ interface Props {
   onEditColumn?: (taskType: string) => void
   columnOrder?: string[]                          // custom column order (set by user drag)
   onReorderColumns?: (newOrder: string[]) => void // fires when user drags columns
+  minDate?: string                                // hide days before this YYYY-MM-DD (tasks still overflow into first day)
 }
 
 // Visual order right-to-left (RTL)
@@ -87,7 +88,7 @@ export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
   currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, showAllDays, onSelectTask, onRemoveSoldier, onEditAssignmentNote, onToggleActingCommander,
   onMoveTask, onResizeTask, onResizeTaskStart, onDeleteTask, onMoveTaskToSlot, onCreateTaskAtSlot,
-  onPairSoldiers, onUnpairSoldier, onDeleteColumn, onEditColumn, columnOrder, onReorderColumns,
+  onPairSoldiers, onUnpairSoldier, onDeleteColumn, onEditColumn, columnOrder, onReorderColumns, minDate,
 }: Props) {
   const DAY_START_HOUR = dayStartHour
   // HOME_LEAVE_START: when soldiers swap (depart/return). Defaults to DAY_START_HOUR.
@@ -265,6 +266,9 @@ export default function ScheduleGrid({
 
     let sortedDays = Array.from(taskDays).sort()
 
+    // Hide days before minDate (tasks starting before minDate still overflow into the first visible day)
+    if (minDate) sortedDays = sortedDays.filter(d => d >= minDate)
+
     // Soldier-facing view: only show today and the next 3 calendar days (4-day window).
     // Skipped when showAllDays is true (admin "view full" mode) or in builderMode.
     if (!builderMode && !showAllDays && sortedDays.length > 0) {
@@ -283,7 +287,7 @@ export default function ScheduleGrid({
     if (cols.length === 0) cols.push(...COLUMN_ORDER)
 
     return { days: sortedDays, allColumns: cols }
-  }, [tasks, assignments, finalLeave, myTasksOnly, currentSoldierId, builderMode, showAllDays, columnOrder])
+  }, [tasks, assignments, finalLeave, myTasksOnly, currentSoldierId, builderMode, showAllDays, columnOrder, minDate])
 
   // Time line: show only when nowMilitaryDay is actually in the grid.
   // If we're before the schedule starts (e.g. 00:31 on day 1 when schedule starts at 14:00),

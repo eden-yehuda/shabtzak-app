@@ -977,6 +977,7 @@ export default function EditSchedule() {
                 builderMode
                 dayStartHour={schedule?.day_start_hour ?? 2}
                 homeLeaveHour={schedule?.home_leave_hour}
+                minDate={schedule?.start_datetime ? (() => { const d = schedule.start_datetime; return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })() : undefined}
                 selectedTaskId={selectedTaskId}
                 currentSoldierId={highlightedSoldierId}
                 onSelectTask={id => setSelectedTaskId(prev => prev === id ? null : id)}
