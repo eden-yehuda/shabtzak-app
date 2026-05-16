@@ -32,7 +32,7 @@ interface Props {
 }
 
 // Visual order right-to-left (RTL)
-const COLUMN_ORDER = ['תרג"ד', 'סיור', 'בלת"מ', 'כ"כ ג', 'כ"כ ב', 'כוננות', 'כ"כ א', 'אחורית', 'ש"ג', 'של"ז', 'תורן רס"פ', 'תורן מטבח']
+const COLUMN_ORDER = ['כ"כ א', 'כ"כ ב', 'כ"כ ג', 'סיור', 'תרג"ד', 'בלת"מ', 'כוננות', 'אחורית', 'ש"ג', 'של"ז', 'תורן רס"פ', 'תורן מטבח']
 
 // Colors per column type
 const COL_STYLE: Record<string, { headBg: string; headText: string; cardBg: string; cardBorder: string; cardText: string; mineBg: string }> = {

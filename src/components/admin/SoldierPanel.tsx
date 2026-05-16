@@ -149,8 +149,8 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
     })
   }
 
-  const commanderList = useMemo(() => sortByAvailability(enriched, true), [enriched])
-  const soldierList = useMemo(() => sortByAvailability(enriched, false), [enriched])
+  // Single unified list: commanders first within each availability tier
+  const unifiedList = useMemo(() => sortByAvailability(enriched, true), [enriched])
 
   const requiresCommander = selectedTask?.requires_commander ?? false
 
@@ -297,36 +297,11 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
         </div>
       )}
 
-      {/* Soldiers list - split into sections when task requires commander */}
+      {/* Soldiers list — unified, commanders first */}
       <div className="flex flex-col gap-2 overflow-y-auto flex-1">
-        {requiresCommander ? (
-          <>
-            {/* Commander section */}
-            <div>
-              <div className="text-[10px] font-bold text-navy uppercase tracking-wide mb-1 px-1 flex items-center gap-1">
-                <span>★</span><span>מפקד</span>
-              </div>
-              <div className="grid grid-cols-2 gap-1">
-                {commanderList.map(item => renderSoldierButton(item))}
-              </div>
-            </div>
-
-            <div className="border-t border-slate-200 my-1" />
-
-            {/* Soldier section */}
-            <div>
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1 px-1">לוחמים</div>
-              <div className="grid grid-cols-2 gap-1">
-                {soldierList.map(item => renderSoldierButton(item))}
-              </div>
-            </div>
-          </>
-        ) : (
-          /* Single list when no commander required */
-          <div className="grid grid-cols-2 gap-1">
-            {soldierList.map(item => renderSoldierButton(item))}
-          </div>
-        )}
+        <div className="grid grid-cols-2 gap-1">
+          {unifiedList.map(item => renderSoldierButton(item))}
+        </div>
       </div>
 
       {/* Modal: soldier's assignments + leave */}

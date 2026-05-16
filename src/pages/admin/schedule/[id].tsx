@@ -42,6 +42,7 @@ export default function EditSchedule() {
   const [showCloneModal, setShowCloneModal] = useState(false)
   const [cloneLoading, setCloneLoading] = useState(false)
   const [editingColumn, setEditingColumn] = useState<string | null>(null)
+  const [copyingKKA, setCopyingKKA] = useState(false)
 
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
   const [showErrorPanel, setShowErrorPanel] = useState(false)
@@ -584,6 +585,36 @@ export default function EditSchedule() {
     setEditingColumn(null)
   }
 
+  async function handleCopyKKAToKKB() {
+    if (!scheduleId) return
+    const kkaTasks = tasks.filter(t => t.task_type === 'כ"כ א').sort((a, b) => a.start_datetime.getTime() - b.start_datetime.getTime())
+    const kkbTasks = tasks.filter(t => t.task_type === 'כ"כ ב')
+    let copied = 0
+    setCopyingKKA(true)
+    try {
+      for (const kkaTask of kkaTasks) {
+        const kkaEnd = kkaTask.end_datetime.getTime()
+        // Find כ"כ ב shift that starts when this כ"כ א shift ends (within 30 min)
+        const kkbNext = kkbTasks.find(t => Math.abs(t.start_datetime.getTime() - kkaEnd) < 1800000)
+        if (!kkbNext) continue
+        const kkaAssigns = assignments.filter(a => a.task_id === kkaTask.id)
+        const kkbAssignedIds = new Set(assignments.filter(a => a.task_id === kkbNext.id).map(a => a.soldier_id))
+        const maxToAdd = Math.max(0, (kkbNext.required_people_count) - kkbAssignedIds.size)
+        let added = 0
+        for (const a of kkaAssigns) {
+          if (added >= maxToAdd) break
+          if (kkbAssignedIds.has(a.soldier_id)) continue
+          await createAssignment(kkbNext.id, a.soldier_id)
+          copied++
+          added++
+        }
+      }
+      await touchSchedule()
+      alert(`✓ הועתקו ${copied} שיבוצים מכ"כ א לכ"כ ב`)
+    } catch (e) { alert('שגיאה: ' + (e as Error).message) }
+    finally { setCopyingKKA(false) }
+  }
+
   async function handleMoveTaskToSlot(taskId: string, date: string, hour: number) {
     const task = tasks.find(t => t.id === taskId)
     if (!task) return
@@ -765,6 +796,14 @@ export default function EditSchedule() {
             className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition">
             📋 שכפל משבצ&quot;ק
           </button>
+
+          {tasks.some(t => t.task_type === 'כ"כ א') && tasks.some(t => t.task_type === 'כ"כ ב') && (
+            <button onClick={handleCopyKKAToKKB} disabled={copyingKKA}
+              className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-40"
+              title="העתק שיבוצי כ&quot;כ א לכ&quot;כ ב העוקב (עד מכסת החיילים)">
+              {copyingKKA ? '⏳...' : '↷ כ"כ א → כ"כ ב'}
+            </button>
+          )}
 
           <button onClick={performUndo} disabled={undoStack.length === 0}
             title={undoStack.length > 0 ? `ביטול: ${undoStack[undoStack.length - 1].label} (Ctrl+Z)` : 'אין פעולה לביטול'}
