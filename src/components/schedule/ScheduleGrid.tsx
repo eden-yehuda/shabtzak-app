@@ -26,6 +26,7 @@ interface Props {
   onPairSoldiers?: (taskId: string, soldierIdA: string, soldierIdB: string) => void
   onUnpairSoldier?: (taskId: string, soldierId: string) => void
   onDeleteColumn?: (taskType: string) => void
+  onEditColumn?: (taskType: string) => void
   columnOrder?: string[]                          // custom column order (set by user drag)
   onReorderColumns?: (newOrder: string[]) => void // fires when user drags columns
 }
@@ -86,7 +87,7 @@ export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
   currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, showAllDays, onSelectTask, onRemoveSoldier, onEditAssignmentNote, onToggleActingCommander,
   onMoveTask, onResizeTask, onResizeTaskStart, onDeleteTask, onMoveTaskToSlot, onCreateTaskAtSlot,
-  onPairSoldiers, onUnpairSoldier, onDeleteColumn, columnOrder, onReorderColumns,
+  onPairSoldiers, onUnpairSoldier, onDeleteColumn, onEditColumn, columnOrder, onReorderColumns,
 }: Props) {
   const DAY_START_HOUR = dayStartHour
   // HOME_LEAVE_START: when soldiers swap (depart/return). Defaults to DAY_START_HOUR.
@@ -104,6 +105,7 @@ export default function ScheduleGrid({
   // Column drag-to-reorder state (builder mode only)
   const [dragColType, setDragColType] = useState<string | null>(null)
   const [dragOverColType, setDragOverColType] = useState<string | null>(null)
+  const [openColMenu, setOpenColMenu] = useState<string | null>(null)
 
   function handleColDrop(dropOnCol: string) {
     if (!dragColType || dragColType === dropOnCol) { setDragColType(null); setDragOverColType(null); return }
@@ -563,14 +565,33 @@ export default function ScheduleGrid({
                           <span className="absolute top-0.5 right-0.5 text-[8px] opacity-30 select-none pointer-events-none">⠿</span>
                         )}
                         {col}
-                        {builderMode && onDeleteColumn && (
-                          <button
-                            onClick={() => onDeleteColumn(col)}
-                            className="absolute top-0.5 left-0.5 text-[9px] opacity-40 hover:opacity-100"
-                            title={`מחק עמודת ${col}`}
-                          >
-                            ×
-                          </button>
+                        {builderMode && (onDeleteColumn || onEditColumn) && (
+                          <div className="absolute top-0.5 left-0.5">
+                            <button
+                              onClick={e => { e.stopPropagation(); setOpenColMenu(openColMenu === col ? null : col) }}
+                              className="text-[11px] leading-none px-0.5 opacity-50 hover:opacity-100 rounded"
+                              title="אפשרויות עמודה"
+                            >⋯</button>
+                            {openColMenu === col && (
+                              <>
+                                <div className="fixed inset-0 z-40" onClick={() => setOpenColMenu(null)} />
+                                <div className="absolute top-5 left-0 bg-white border border-slate-200 rounded-xl shadow-lg z-50 min-w-[120px] py-1 text-right" dir="rtl">
+                                  {onEditColumn && (
+                                    <button
+                                      onClick={e => { e.stopPropagation(); setOpenColMenu(null); onEditColumn(col) }}
+                                      className="w-full text-right px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                    >✏️ ערוך עמודה</button>
+                                  )}
+                                  {onDeleteColumn && (
+                                    <button
+                                      onClick={e => { e.stopPropagation(); setOpenColMenu(null); onDeleteColumn(col) }}
+                                      className="w-full text-right px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                    >🗑 מחק עמודה</button>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
                         )}
                       </th>
                     )
