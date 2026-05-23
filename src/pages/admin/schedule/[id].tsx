@@ -88,14 +88,23 @@ export default function EditSchedule() {
       updateDoc(doc(db, 'schedules', scheduleId), { column_order: newOrder }).catch(console.error)
     }
   }
-  // Sync colOrder key when scheduleId becomes known
+  // Sync colOrder: prefer Firestore, fall back to localStorage, and sync localStorage → Firestore if needed
   useEffect(() => {
     if (!scheduleId) return
     try {
       const stored = localStorage.getItem(`colOrder_${scheduleId}`)
-      if (stored) setColOrder(JSON.parse(stored))
+      const parsed: string[] | null = stored ? JSON.parse(stored) : null
+      if (parsed) {
+        setColOrder(parsed)
+        // If Firestore doesn't have column_order yet, push localStorage value up
+        if (!schedule?.column_order) {
+          updateDoc(doc(db, 'schedules', scheduleId), { column_order: parsed }).catch(console.error)
+        }
+      } else if (schedule?.column_order) {
+        setColOrder(schedule.column_order)
+      }
     } catch { /* ignore */ }
-  }, [scheduleId])
+  }, [scheduleId, schedule?.column_order])
 
   const [llmChecked, setLlmChecked] = useState(false)
   const [llmResult, setLlmResult] = useState<string | null>(null)
