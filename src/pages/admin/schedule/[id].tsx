@@ -82,7 +82,11 @@ export default function EditSchedule() {
   })
   function handleReorderColumns(newOrder: string[]) {
     setColOrder(newOrder)
-    if (scheduleId) localStorage.setItem(`colOrder_${scheduleId}`, JSON.stringify(newOrder))
+    if (scheduleId) {
+      localStorage.setItem(`colOrder_${scheduleId}`, JSON.stringify(newOrder))
+      // Persist to Firestore so soldier-facing view uses the same order
+      updateDoc(doc(db, 'schedules', scheduleId), { column_order: newOrder }).catch(console.error)
+    }
   }
   // Sync colOrder key when scheduleId becomes known
   useEffect(() => {
