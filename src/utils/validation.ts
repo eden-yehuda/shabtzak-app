@@ -11,7 +11,12 @@ export const ALLOWED_CONCURRENT_TYPES: Array<[string, string]> = [
   ['תורן רס"פ', 'כ"כ ב'],
 ]
 
+// Task types that are always allowed to run concurrently with any other type
+// (e.g. בלת"מ is a 24h readiness duty that overlaps by design with regular shifts)
+const ALWAYS_CONCURRENT_TYPES = new Set(['בלת"מ', 'כוננות'])
+
 export function isAllowedConcurrent(typeA: string, typeB: string): boolean {
+  if (ALWAYS_CONCURRENT_TYPES.has(typeA) || ALWAYS_CONCURRENT_TYPES.has(typeB)) return true
   return ALLOWED_CONCURRENT_TYPES.some(([a, b]) =>
     (a === typeA && b === typeB) || (a === typeB && b === typeA)
   )
