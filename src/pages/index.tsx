@@ -278,16 +278,26 @@ export default function HomePage() {
     })
   }, [])
 
-  // On every schedules update, jump to the schedule that contains today —
+  // On every schedules update, jump to the best schedule —
   // unless the user has manually navigated away.
   useEffect(() => {
     if (schedules.length === 0 || userNavigated.current) return
     const now = new Date()
-    const idx = schedules.findIndex(s =>
+    // 1. Prefer a schedule that contains now
+    let idx = schedules.findIndex(s =>
       s.start_datetime && s.end_datetime &&
       s.start_datetime <= now && s.end_datetime >= now
     )
-    if (idx >= 0) setScheduleIdx(idx)
+    if (idx < 0) {
+      // 2. No current schedule — pick the one whose start_datetime is closest to now
+      //    (handles gap between weeks and upcoming schedules)
+      idx = schedules.reduce((bestIdx, s, i) => {
+        const dist = Math.abs((s.start_datetime?.getTime() ?? 0) - now.getTime())
+        const bestDist = Math.abs((schedules[bestIdx]?.start_datetime?.getTime() ?? 0) - now.getTime())
+        return dist < bestDist ? i : bestIdx
+      }, 0)
+    }
+    setScheduleIdx(idx)
   }, [schedules])
 
   const currentSchedule = schedules[scheduleIdx] ?? null
@@ -472,6 +482,7 @@ export default function HomePage() {
             myTasksOnly={myTasksOnly}
             dayStartHour={currentSchedule?.day_start_hour ?? 2}
             homeLeaveHour={currentSchedule?.home_leave_hour}
+            columnOrder={currentSchedule?.column_order}
           />
       }
 

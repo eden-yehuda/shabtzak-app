@@ -7,6 +7,8 @@ import AdminLayout from '@/components/layout/AdminLayout'
 import ScheduleGrid from '@/components/schedule/ScheduleGrid'
 import SoldierPanel from '@/components/admin/SoldierPanel'
 import TaskModal from '@/components/admin/TaskModal'
+import CloneScheduleModal from '@/components/admin/CloneScheduleModal'
+import EditColumnModal, { type EditColumnParams } from '@/components/admin/EditColumnModal'
 import SyncFromSheets from '@/components/admin/SyncFromSheets'
 import ValidationPanel, { errorKey as validationErrorKey } from '@/components/admin/ValidationPanel'
 import ConfirmModal from '@/components/ui/ConfirmModal'
@@ -37,6 +39,10 @@ export default function EditSchedule() {
   )
   const [showTaskModal, setShowTaskModal] = useState(false)
   const [showSyncModal, setShowSyncModal] = useState(false)
+  const [showCloneModal, setShowCloneModal] = useState(false)
+  const [cloneLoading, setCloneLoading] = useState(false)
+  const [editingColumn, setEditingColumn] = useState<string | null>(null)
+  const [copyingKKA, setCopyingKKA] = useState(false)
 
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
   const [showErrorPanel, setShowErrorPanel] = useState(false)
@@ -76,7 +82,11 @@ export default function EditSchedule() {
   })
   function handleReorderColumns(newOrder: string[]) {
     setColOrder(newOrder)
-    if (scheduleId) localStorage.setItem(`colOrder_${scheduleId}`, JSON.stringify(newOrder))
+    if (scheduleId) {
+      localStorage.setItem(`colOrder_${scheduleId}`, JSON.stringify(newOrder))
+      // Persist to Firestore so soldier-facing view uses the same order
+      updateDoc(doc(db, 'schedules', scheduleId), { column_order: newOrder }).catch(console.error)
+    }
   }
   // Sync colOrder key when scheduleId becomes known
   useEffect(() => {
@@ -491,6 +501,124 @@ export default function EditSchedule() {
     } catch { alert('שגיאה במחיקת עמודה') }
   }
 
+  async function handleCloneSchedule(sourceId: string, replaceExisting: boolean) {
+    if (!scheduleId) return
+    setCloneLoading(true)
+    try {
+      const srcSnap = await getDocs(query(collection(db, 'tasks'), where('schedule_id', '==', sourceId)))
+      if (replaceExisting) {
+        const existingSnap = await getDocs(query(collection(db, 'tasks'), where('schedule_id', '==', scheduleId)))
+        const assignIds: string[] = []
+        for (const t of existingSnap.docs) {
+          const aSnap = await getDocs(query(collection(db, 'assignments'), where('task_id', '==', t.id)))
+          aSnap.docs.forEach(a => assignIds.push(a.id))
+        }
+        const batch = writeBatch(db)
+        assignIds.forEach(id => batch.delete(doc(db, 'assignments', id)))
+        existingSnap.docs.forEach(t => batch.delete(t.ref))
+        await batch.commit()
+      }
+      // Get source schedule start to compute day offsets
+      const srcScheduleSnap = await getDocs(query(collection(db, 'schedules'), where('__name__', '==', sourceId)))
+      const srcScheduleData = srcScheduleSnap.docs[0]?.data()
+      const srcStart: Date = srcScheduleData?.start_datetime?.toDate?.() ?? new Date()
+      const tgtStart = scheduleStart
+
+      for (const taskDoc of srcSnap.docs) {
+        const d = taskDoc.data()
+        const taskStart: Date = d.start_datetime?.toDate?.() ?? new Date()
+        const taskEnd: Date = d.end_datetime?.toDate?.() ?? new Date()
+        const dayOffset = Math.round((taskStart.getTime() - srcStart.getTime()) / 86400000)
+        const newStart = new Date(tgtStart.getTime() + dayOffset * 86400000)
+        newStart.setHours(taskStart.getHours(), taskStart.getMinutes(), 0, 0)
+        const duration = taskEnd.getTime() - taskStart.getTime()
+        const newEnd = new Date(newStart.getTime() + duration)
+        await addDoc(collection(db, 'tasks'), {
+          schedule_id: scheduleId,
+          task_name: d.task_name, task_type: d.task_type,
+          start_datetime: Timestamp.fromDate(newStart),
+          end_datetime: Timestamp.fromDate(newEnd),
+          requires_commander: d.requires_commander ?? false,
+          required_people_count: d.required_people_count ?? 3,
+          difficulty: d.difficulty ?? 'hard',
+          notes: d.notes ?? '',
+        })
+      }
+      await touchSchedule()
+      setShowCloneModal(false)
+    } catch (e) { alert('שגיאה בשכפול: ' + (e as Error).message) }
+    finally { setCloneLoading(false) }
+  }
+
+  async function handleEditColumn(taskType: string, params: EditColumnParams) {
+    if (!scheduleId) return
+    const colTasks = tasks.filter(t => t.task_type === taskType)
+    // Collect unique days that had tasks in this column
+    const daySet = new Set(colTasks.map(t => {
+      const d = t.start_datetime
+      return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
+    }))
+    const days = Array.from(daySet).sort()
+    // Delete existing tasks and their assignments
+    const batch = writeBatch(db)
+    for (const task of colTasks) {
+      const aSnap = await getDocs(query(collection(db, 'assignments'), where('task_id', '==', task.id)))
+      aSnap.docs.forEach(a => batch.delete(a.ref))
+      batch.delete(doc(db, 'tasks', task.id))
+    }
+    await batch.commit()
+    // Recreate with new params
+    for (const dayStr of days) {
+      for (let i = 0; i < params.timesPerDay; i++) {
+        const startMs = new Date(`${dayStr}T${String(params.startHour).padStart(2, '0')}:00`).getTime()
+          + i * params.durationHours * 3600000
+        const start = new Date(startMs)
+        const end = new Date(startMs + params.durationHours * 3600000)
+        await addDoc(collection(db, 'tasks'), {
+          schedule_id: scheduleId,
+          task_name: params.taskName, task_type: taskType,
+          start_datetime: Timestamp.fromDate(start),
+          end_datetime: Timestamp.fromDate(end),
+          requires_commander: params.requiresCommander,
+          required_people_count: params.soldiersRequired,
+          difficulty: 'hard', notes: '',
+        })
+      }
+    }
+    await touchSchedule()
+    setEditingColumn(null)
+  }
+
+  async function handleCopyKKAToKKB() {
+    if (!scheduleId) return
+    const kkaTasks = tasks.filter(t => t.task_type === 'כ"כ א').sort((a, b) => a.start_datetime.getTime() - b.start_datetime.getTime())
+    const kkbTasks = tasks.filter(t => t.task_type === 'כ"כ ב')
+    let copied = 0
+    setCopyingKKA(true)
+    try {
+      for (const kkaTask of kkaTasks) {
+        const kkaEnd = kkaTask.end_datetime.getTime()
+        // Find כ"כ ב shift that starts when this כ"כ א shift ends (within 30 min)
+        const kkbNext = kkbTasks.find(t => Math.abs(t.start_datetime.getTime() - kkaEnd) < 1800000)
+        if (!kkbNext) continue
+        const kkaAssigns = assignments.filter(a => a.task_id === kkaTask.id)
+        const kkbAssignedIds = new Set(assignments.filter(a => a.task_id === kkbNext.id).map(a => a.soldier_id))
+        const maxToAdd = Math.max(0, (kkbNext.required_people_count) - kkbAssignedIds.size)
+        let added = 0
+        for (const a of kkaAssigns) {
+          if (added >= maxToAdd) break
+          if (kkbAssignedIds.has(a.soldier_id)) continue
+          await createAssignment(kkbNext.id, a.soldier_id)
+          copied++
+          added++
+        }
+      }
+      await touchSchedule()
+      alert(`✓ הועתקו ${copied} שיבוצים מכ"כ א לכ"כ ב`)
+    } catch (e) { alert('שגיאה: ' + (e as Error).message) }
+    finally { setCopyingKKA(false) }
+  }
+
   async function handleMoveTaskToSlot(taskId: string, date: string, hour: number) {
     const task = tasks.find(t => t.id === taskId)
     if (!task) return
@@ -668,6 +796,19 @@ export default function EditSchedule() {
             + הוסף משימה
           </button>
 
+          <button onClick={() => setShowCloneModal(true)}
+            className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition">
+            📋 שכפל משבצ&quot;ק
+          </button>
+
+          {tasks.some(t => t.task_type === 'כ"כ א') && tasks.some(t => t.task_type === 'כ"כ ב') && (
+            <button onClick={handleCopyKKAToKKB} disabled={copyingKKA}
+              className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-40"
+              title="העתק שיבוצי כ&quot;כ א לכ&quot;כ ב העוקב (עד מכסת החיילים)">
+              {copyingKKA ? '⏳...' : '↷ כ"כ א → כ"כ ב'}
+            </button>
+          )}
+
           <button onClick={performUndo} disabled={undoStack.length === 0}
             title={undoStack.length > 0 ? `ביטול: ${undoStack[undoStack.length - 1].label} (Ctrl+Z)` : 'אין פעולה לביטול'}
             className="border border-slate-300 text-slate-700 rounded-xl px-4 py-2 text-sm font-semibold hover:border-navy hover:text-navy transition disabled:opacity-30 disabled:cursor-not-allowed">
@@ -840,6 +981,7 @@ export default function EditSchedule() {
                 builderMode
                 dayStartHour={schedule?.day_start_hour ?? 2}
                 homeLeaveHour={schedule?.home_leave_hour}
+                minDate={schedule?.start_datetime ? (() => { const d = schedule.start_datetime; return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })() : undefined}
                 selectedTaskId={selectedTaskId}
                 currentSoldierId={highlightedSoldierId}
                 onSelectTask={id => setSelectedTaskId(prev => prev === id ? null : id)}
@@ -907,6 +1049,7 @@ export default function EditSchedule() {
                 onMoveTaskToSlot={handleMoveTaskToSlot}
                 onCreateTaskAtSlot={handleCreateTaskAtSlot}
                 onDeleteColumn={handleDeleteColumn}
+                onEditColumn={col => setEditingColumn(col)}
                 columnOrder={colOrder}
                 onReorderColumns={handleReorderColumns}
                 onPairSoldiers={async (taskId, soldierIdA, soldierIdB) => {
@@ -969,6 +1112,25 @@ export default function EditSchedule() {
           scheduleEnd={scheduleEnd}
           defaultStartHour={schedule?.home_leave_hour ?? schedule?.day_start_hour ?? 6}
           onClose={() => setShowTaskModal(false)}
+        />
+      )}
+
+      {showCloneModal && (
+        <CloneScheduleModal
+          currentScheduleId={scheduleId}
+          hasExistingTasks={tasks.length > 0}
+          isLoading={cloneLoading}
+          onClose={() => setShowCloneModal(false)}
+          onConfirm={handleCloneSchedule}
+        />
+      )}
+
+      {editingColumn && (
+        <EditColumnModal
+          taskType={editingColumn}
+          tasks={tasks.filter(t => t.task_type === editingColumn)}
+          onClose={() => setEditingColumn(null)}
+          onSave={params => handleEditColumn(editingColumn, params)}
         />
       )}
 

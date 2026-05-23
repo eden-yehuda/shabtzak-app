@@ -133,6 +133,9 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
   function sortByAvailability(items: Item[], commandersFirst: boolean): Item[] {
     return [...items].sort((a, b) => {
       if (a.isAssignedToSelected !== b.isAssignedToSelected) return a.isAssignedToSelected ? -1 : 1
+      // Commanders always before non-commanders (primary sort after assigned)
+      if (commandersFirst && a.soldier.is_commander !== b.soldier.is_commander)
+        return a.soldier.is_commander ? -1 : 1
       const ra = availabilityRank(a)
       const rb = availabilityRank(b)
       if (ra !== rb) return ra - rb
@@ -140,17 +143,12 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
       const restA = a.restHours ?? Number.POSITIVE_INFINITY
       const restB = b.restHours ?? Number.POSITIVE_INFINITY
       if (restA !== restB) return restB - restA
-      // Commander tie-breaker per section
-      if (a.soldier.is_commander !== b.soldier.is_commander) {
-        if (commandersFirst) return a.soldier.is_commander ? -1 : 1
-        return a.soldier.is_commander ? 1 : -1
-      }
       return a.taskCount - b.taskCount
     })
   }
 
-  const commanderList = useMemo(() => sortByAvailability(enriched, true), [enriched])
-  const soldierList = useMemo(() => sortByAvailability(enriched, false), [enriched])
+  // Single unified list: commanders first within each availability tier
+  const unifiedList = useMemo(() => sortByAvailability(enriched, true), [enriched])
 
   const requiresCommander = selectedTask?.requires_commander ?? false
 
@@ -297,36 +295,11 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
         </div>
       )}
 
-      {/* Soldiers list - split into sections when task requires commander */}
+      {/* Soldiers list — unified, commanders first */}
       <div className="flex flex-col gap-2 overflow-y-auto flex-1">
-        {requiresCommander ? (
-          <>
-            {/* Commander section */}
-            <div>
-              <div className="text-[10px] font-bold text-navy uppercase tracking-wide mb-1 px-1 flex items-center gap-1">
-                <span>★</span><span>מפקד</span>
-              </div>
-              <div className="grid grid-cols-2 gap-1">
-                {commanderList.map(item => renderSoldierButton(item))}
-              </div>
-            </div>
-
-            <div className="border-t border-slate-200 my-1" />
-
-            {/* Soldier section */}
-            <div>
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1 px-1">לוחמים</div>
-              <div className="grid grid-cols-2 gap-1">
-                {soldierList.map(item => renderSoldierButton(item))}
-              </div>
-            </div>
-          </>
-        ) : (
-          /* Single list when no commander required */
-          <div className="grid grid-cols-2 gap-1">
-            {soldierList.map(item => renderSoldierButton(item))}
-          </div>
-        )}
+        <div className="grid grid-cols-2 gap-1">
+          {unifiedList.map(item => renderSoldierButton(item))}
+        </div>
       </div>
 
       {/* Modal: soldier's assignments + leave */}

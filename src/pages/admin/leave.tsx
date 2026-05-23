@@ -228,7 +228,10 @@ export default function AdminLeavePage() {
   function pageToday() { setRangeFrom(''); setRangeTo('') }
 
   const sorted = useMemo(() =>
-    [...soldiers].filter(s => s.is_active).sort((a, b) => a.full_name.localeCompare(b.full_name, 'he')),
+    [...soldiers].filter(s => s.is_active).sort((a, b) => {
+      if (a.is_commander !== b.is_commander) return a.is_commander ? -1 : 1
+      return a.full_name.localeCompare(b.full_name, 'he')
+    }),
     [soldiers]
   )
 
