@@ -304,6 +304,18 @@ export default function HomePage() {
   // Soldier view reads the LATEST PUBLISHED SNAPSHOT — not the live working copy
   const { tasks, assignments } = usePublishedSchedule(currentSchedule?.id ?? null)
 
+  // Column order: prefer Firestore value on schedule doc, fall back to localStorage (admin same-device)
+  const columnOrder = useMemo(() => {
+    if (currentSchedule?.column_order) return currentSchedule.column_order
+    if (typeof window !== 'undefined' && currentSchedule?.id) {
+      try {
+        const stored = localStorage.getItem(`colOrder_${currentSchedule.id}`)
+        return stored ? (JSON.parse(stored) as string[]) : undefined
+      } catch { return undefined }
+    }
+    return undefined
+  }, [currentSchedule?.column_order, currentSchedule?.id])
+
   // SOS always uses the schedule that contains NOW — regardless of which week the user is browsing
   const sosSchedule = useMemo(() => {
     const n = new Date()
@@ -482,7 +494,7 @@ export default function HomePage() {
             myTasksOnly={myTasksOnly}
             dayStartHour={currentSchedule?.day_start_hour ?? 2}
             homeLeaveHour={currentSchedule?.home_leave_hour}
-            columnOrder={currentSchedule?.column_order}
+            columnOrder={columnOrder}
           />
       }
 
