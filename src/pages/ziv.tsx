@@ -115,12 +115,6 @@ export default function ZivPage() {
     [tasks]
   )
 
-  // 🎭 בדיחה: כולם הם זיו צארום
-  const jokeySoldiers = useMemo(
-    () => soldiers.map(s => ({ ...s, full_name: 'זיו צארום' })),
-    [soldiers]
-  )
-
   if (!checked) return null
   if (!authed) return <LoginScreen onLogin={() => setAuthed(true)} />
 
@@ -155,7 +149,7 @@ export default function ZivPage() {
           <ScheduleGrid
             tasks={visibleTasks}
             assignments={assignments}
-            soldiers={jokeySoldiers}
+            soldiers={soldiers}
             finalLeave={finalLeave}
             dayStartHour={currentSchedule?.day_start_hour ?? 2}
             homeLeaveHour={currentSchedule?.home_leave_hour}
