@@ -21,7 +21,12 @@ function dayLabel(dateStr: string) {
 
 export default function LeaveGrid({ soldiers, requests, dates, currentSoldierId, onToggle }: Props) {
   const sorted = useMemo(() =>
-    [...soldiers].sort((a, b) => a.full_name.localeCompare(b.full_name, 'he')),
+    [...soldiers]
+      .filter(s => s.is_active)
+      .sort((a, b) => {
+        if (a.is_commander !== b.is_commander) return a.is_commander ? -1 : 1
+        return a.full_name.localeCompare(b.full_name, 'he')
+      }),
     [soldiers]
   )
 

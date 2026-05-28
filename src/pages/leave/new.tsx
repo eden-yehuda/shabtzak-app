@@ -49,7 +49,7 @@ export default function LeaveRequestPage() {
   }
 
   const sortedSoldiers = useMemo(() =>
-    [...soldiers].sort((a, b) => {
+    [...soldiers].filter(s => s.is_active).sort((a, b) => {
       if (a.is_commander !== b.is_commander) return a.is_commander ? -1 : 1
       return a.full_name.localeCompare(b.full_name, 'he')
     }),
