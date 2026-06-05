@@ -78,6 +78,17 @@ function isoDate(d: Date) {
   ].join('-')
 }
 
+// Military date: if the task starts before dayStartHour it belongs to the PREVIOUS military day.
+// e.g. with day_start_hour=6, a 02:00 task belongs to the previous day's column.
+function militaryDate(d: Date, dayStartHour: number): string {
+  if (d.getHours() < dayStartHour) {
+    const prev = new Date(d)
+    prev.setDate(prev.getDate() - 1)
+    return isoDate(prev)
+  }
+  return isoDate(d)
+}
+
 function addDays(dateStr: string, n: number): string {
   const d = new Date(dateStr + 'T12:00:00')
   d.setDate(d.getDate() + n)
@@ -250,14 +261,14 @@ export default function ScheduleGrid({
     if (!builderMode) {
       const dayHasAnyAssignment: Record<string, boolean> = {}
       for (const t of tasks) {
-        const d = isoDate(t.start_datetime)
+        const d = militaryDate(t.start_datetime, dayStartHour)
         if (assignments.some(a => a.task_id === t.id)) dayHasAnyAssignment[d] = true
       }
-      visibleTasks = tasks.filter(t => dayHasAnyAssignment[isoDate(t.start_datetime)])
+      visibleTasks = tasks.filter(t => dayHasAnyAssignment[militaryDate(t.start_datetime, dayStartHour)])
     }
 
     // In my-tasks mode: also include days the soldier is home (so we can show בית block)
-    const taskDays = new Set(visibleTasks.map(t => isoDate(t.start_datetime)))
+    const taskDays = new Set(visibleTasks.map(t => militaryDate(t.start_datetime, dayStartHour)))
     if (myTasksOnly && currentSoldierId) {
       finalLeave
         .filter(r => r.soldier_id === currentSoldierId && r.status === 'approved')
@@ -318,12 +329,13 @@ export default function ScheduleGrid({
   const tasksByDay = useMemo(() => {
     const m: Record<string, Task[]> = {}
     for (const t of tasks) {
-      const key = isoDate(t.start_datetime)
+      // Use military date so tasks starting before day_start_hour belong to previous column
+      const key = militaryDate(t.start_datetime, DAY_START_HOUR)
       if (!m[key]) m[key] = []
       m[key].push(t)
     }
     return m
-  }, [tasks])
+  }, [tasks, DAY_START_HOUR])
 
   // is_designated_commander = should be displayed as the task's commander (BOLD).
   // Set when (a) explicitly marked acting commander, OR (b) auto-promoted real commander
