@@ -636,7 +636,44 @@ git commit -m "feat: apply taskErrors + always-on validation panel to new schedu
 
 ---
 
-## Task 7: אימות סופי + פריסה ל-staging
+## Task 7: תיקון באג גרסה ישנה בממשק לוחמים (stale cache)
+
+**Files:**
+- Create: `public/_headers`
+
+**אבחון:** האפליקציה היא static export (`output: 'export'` ב-`next.config.mjs`) המוגשת מ-Netlify CDN. אין service worker, אין Firestore offline persistence, ואין שום קובץ `_headers`/`_redirects`. שכבת הנתונים (`usePublishedSchedule`) כבר משתמשת ב-`onSnapshot` חי — ולכן הנתונים עצמם טריים ברגע שה-JS רץ. הבעיה: הדפדפן מגיש `index.html` מהמטמון שטוען חבילת JS ישנה, ולכן הלוחם רואה "גרסה ישנה" עד שמרענן ידנית (רענון מאלץ revalidation). הפתרון: לאלץ revalidation של ה-HTML תוך שמירה על caching אגרסיבי של נכסים חתומי-hash.
+
+- [ ] **Step 1: יצירת `public/_headers`**
+
+צור קובץ חדש `public/_headers` (Next מעתיק את תוכן `public/` לשורש ה-export ב-`out/`, ו-Netlify קורא `out/_headers`). תוכן:
+
+```
+/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+```
+
+הסבר: הכלל `/*` מאלץ את הדפדפן לאמת מחדש כל מסמך (כולל כל קבצי ה-HTML של ה-export עם `trailingSlash`) בכל כניסה. הכלל הספציפי יותר `/_next/static/*` גובר עבור נכסים חתומי-hash ומאפשר caching ל-שנה (בטוח — שם הקובץ משתנה עם התוכן).
+
+- [ ] **Step 2: ודאות שה-export כולל את הקובץ**
+
+Run: `npm run build`
+Expected: ההידור מצליח, ונוצר `out/_headers` (Next מעתיק `public/_headers`). אמת קיום: `ls out/_headers` אמור להציג את הקובץ.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add public/_headers
+git commit -m "fix: force HTML revalidation to prevent stale soldier-view versions"
+```
+
+> **אימות ב-staging (ב-Task 8):** פתח את ממשק הלוחמים ב-staging, פרסם עדכון מהאדמין, ובדוק בכלי הפיתוח (Network → response headers של המסמך) ש-`Cache-Control: public, max-age=0, must-revalidate` מוחזר. ודא שכניסה חוזרת מציגה את הגרסה החדשה ללא רענון ידני.
+
+---
+
+## Task 8: אימות סופי + פריסה ל-staging
 
 **Files:** אין שינויי קוד — אימות בלבד.
 
@@ -668,6 +705,7 @@ Expected: staging מתעדכן אוטומטית ב-https://staging--shivzuk.netl
 - פאנל השיבוץ מציג "⭐ מומלצים (N)" פתוח למעלה, ו"שאר החיילים (M)" מקופל.
 - משימה חסרת מפקד/תת-מאוישת מסומנת במסגרת אדומה + ⚠️ בגריד; פאנל השגיאות גלוי תמיד מעל הגריד.
 - כל הנ"ל עובד גם ב-`new.tsx` (שבצק חדש), פרט לאישור הזזה/מחיקה שאינו רלוונטי שם.
+- ממשק הלוחמים מציג את הגרסה המעודכנת בכניסה חוזרת ללא רענון ידני; מסמך ה-HTML מוחזר עם `Cache-Control: public, max-age=0, must-revalidate` (בדיקה ב-Network של כלי הפיתוח).
 
 - [ ] **Step 5: דיווח למשתמש**
 
