@@ -54,7 +54,6 @@ export default function NewSchedule() {
 
   // Validation
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
-  const [showValidation, setShowValidation] = useState(false)
   const [llmChecked, setLlmChecked] = useState(false)
   const [llmResult, setLlmResult] = useState<string | null>(null)
   const [llmLoading, setLlmLoading] = useState(false)
@@ -66,6 +65,16 @@ export default function NewSchedule() {
     setValidationErrors(errors)
     setLlmChecked(false)
   }, [tasks, assignments, soldiers, finalLeave, scheduleId])
+
+  const taskErrors = useMemo(() => {
+    const map: Record<string, string[]> = {}
+    for (const e of validationErrors) {
+      if (e.type !== 'error' || !e.task_id) continue
+      if (!map[e.task_id]) map[e.task_id] = []
+      map[e.task_id].push(e.message)
+    }
+    return map
+  }, [validationErrors])
 
   async function initSchedule() {
     if (scheduleId || !scheduleName || !uid) return
@@ -250,7 +259,7 @@ export default function NewSchedule() {
             📊 סנכרון שבצ&quot;ק
           </button>
 
-          <button onClick={() => setShowValidation(v => !v)}
+          <button type="button"
             className={`rounded-xl px-4 py-2 text-sm font-semibold border transition ${
               errorCount > 0 ? 'bg-red-50 border-red-300 text-red-700' :
               warnCount > 0  ? 'bg-yellow-50 border-yellow-300 text-yellow-700' :
@@ -281,9 +290,8 @@ export default function NewSchedule() {
         </div>
       )}
 
-      {showValidation && validationErrors.length > 0 && (
-        <div className="mb-4"><ValidationPanel errors={validationErrors} /></div>
-      )}
+      {/* Always-visible validation panel */}
+      <div className="mb-4"><ValidationPanel errors={validationErrors} tasks={tasks} /></div>
 
       <div className="flex gap-4 items-start" dir="rtl">
         <div className="flex-1 min-w-0">
@@ -300,6 +308,7 @@ export default function NewSchedule() {
                 dayStartHour={dayStartHour}
                 homeLeaveHour={homeLeaveHour}
                 selectedTaskId={selectedTaskId}
+                taskErrors={taskErrors}
                 onSelectTask={id => setSelectedTaskId(prev => prev === id ? null : id)}
                 onRemoveSoldier={async (taskId, soldierId) => {
                   const { deleteAssignment } = await import('@/lib/firestore')

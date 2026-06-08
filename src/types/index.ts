@@ -8,6 +8,8 @@ export interface Soldier {
   fixed_home_ranges: Array<{ from: string; to: string }> // YYYY-MM-DD
   // Optional: specific date+hour windows when the soldier IS present (partial week)
   presence_windows?: Array<{ from_date: string; from_hour: number; to_date: string; to_hour: number }>
+  // Optional: date ranges (YYYY-MM-DD) where the soldier is temporarily inactive (hidden per-day)
+  inactive_ranges?: Array<{ from: string; to: string }>
 }
 
 export interface Schedule {

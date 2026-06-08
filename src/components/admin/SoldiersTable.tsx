@@ -27,6 +27,7 @@ export default function SoldiersTable({ soldiers }: Props) {
       is_active: true,
       fixed_home_ranges: [],
       presence_windows: [],
+      inactive_ranges: [],
     })
     setNewSoldier(EMPTY_NEW)
     setAdding(false)
@@ -74,6 +75,27 @@ export default function SoldiersTable({ soldiers }: Props) {
     const current = [...(editing[soldier.id]?.presence_windows ?? soldier.presence_windows ?? [])]
     current.splice(idx, 1)
     patch(soldier.id, 'presence_windows', current)
+  }
+
+  // inactive_ranges helpers — defaults to today (per user request)
+  function todayIso() {
+    const d = new Date()
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
+  }
+  function addInactive(soldier: Soldier) {
+    const current = editing[soldier.id]?.inactive_ranges ?? soldier.inactive_ranges ?? []
+    const t = todayIso()
+    patch(soldier.id, 'inactive_ranges', [...current, { from: t, to: t }])
+  }
+  function updateInactive(soldier: Soldier, idx: number, key: 'from' | 'to', val: string) {
+    const current = [...(editing[soldier.id]?.inactive_ranges ?? soldier.inactive_ranges ?? [])]
+    current[idx] = { ...current[idx], [key]: val }
+    patch(soldier.id, 'inactive_ranges', current)
+  }
+  function removeInactive(soldier: Soldier, idx: number) {
+    const current = [...(editing[soldier.id]?.inactive_ranges ?? soldier.inactive_ranges ?? [])]
+    current.splice(idx, 1)
+    patch(soldier.id, 'inactive_ranges', current)
   }
 
   const sorted = [...soldiers].sort((a, b) =>
@@ -163,6 +185,7 @@ export default function SoldiersTable({ soldiers }: Props) {
               const isDirty = !!editing[s.id]
               const ranges = e.fixed_home_ranges ?? s.fixed_home_ranges
               const windows = e.presence_windows ?? s.presence_windows ?? []
+              const inactives = e.inactive_ranges ?? s.inactive_ranges ?? []
               const isExpanded = expanded === s.id
               return (
                 <>
@@ -264,6 +287,31 @@ export default function SoldiersTable({ soldiers }: Props) {
                               ))}
                               <button onClick={() => addWindow(s)}
                                 className="text-xs text-blue-600 hover:underline mt-1">+ הוסף חלון זמינות</button>
+                            </div>
+                          </div>
+
+                          {/* Inactive ranges (temporary) */}
+                          <div className="min-w-[260px]">
+                            <div className="text-xs font-bold text-slate-600 mb-2">🚫 לא פעיל בתקופה (הסתרה זמנית)</div>
+                            <div className="space-y-1.5">
+                              {inactives.length === 0 && (
+                                <p className="text-xs text-slate-400 italic">אין תקופת אי-פעילות</p>
+                              )}
+                              {inactives.map((r, i) => (
+                                <div key={i} className="flex gap-1.5 items-center">
+                                  <input type="date" value={r.from}
+                                    onChange={ev => updateInactive(s, i, 'from', ev.target.value)}
+                                    className="border border-slate-200 rounded px-1.5 py-1 text-xs" />
+                                  <span className="text-xs text-slate-400">—</span>
+                                  <input type="date" value={r.to}
+                                    onChange={ev => updateInactive(s, i, 'to', ev.target.value)}
+                                    className="border border-slate-200 rounded px-1.5 py-1 text-xs" />
+                                  <button onClick={() => removeInactive(s, i)}
+                                    className="text-red-400 hover:text-red-600 text-xs px-1">✕</button>
+                                </div>
+                              ))}
+                              <button onClick={() => addInactive(s)}
+                                className="text-xs text-blue-600 hover:underline mt-1">+ הוסף תקופה</button>
                             </div>
                           </div>
                         </div>
