@@ -47,6 +47,7 @@ export default function EditSchedule() {
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
   const [showErrorPanel, setShowErrorPanel] = useState(false)
   const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<{ message: string; execute: () => Promise<void> } | null>(null)
 
   // Undo stack: each entry is an inverse-action that reverts the last change
   type UndoAction = { label: string; undo: () => Promise<void> }
@@ -157,6 +158,16 @@ export default function EditSchedule() {
   // Counts exclude dismissed errors (since user marked them as OK)
   const dismissedSet = new Set(dismissedKeys)
   const visibleErrors = validationErrors.filter(e => !dismissedSet.has(validationErrorKey(e)))
+
+  const taskErrors = useMemo(() => {
+    const map: Record<string, string[]> = {}
+    for (const e of visibleErrors) {
+      if (e.type !== 'error' || !e.task_id) continue
+      if (!map[e.task_id]) map[e.task_id] = []
+      map[e.task_id].push(e.message)
+    }
+    return map
+  }, [visibleErrors])
 
   // NOTE: do NOT auto-unpublish on edit. The published version (snapshot) remains visible
   // to soldiers regardless of edits to the working copy. Only an explicit "publish"
@@ -400,7 +411,7 @@ export default function EditSchedule() {
     } catch { alert('שגיאה בעדכון שעת חילופים') }
   }
 
-  async function handleMoveTask(taskId: string, hourDelta: number) {
+  async function doMoveTask(taskId: string, hourDelta: number) {
     const task = tasks.find(t => t.id === taskId)
     if (!task) return
     const oldStart = task.start_datetime
@@ -463,7 +474,7 @@ export default function EditSchedule() {
     } catch { alert('שגיאה בשינוי שעת התחלה') }
   }
 
-  async function handleDeleteTask(taskId: string) {
+  async function doDeleteTask(taskId: string) {
     const task = tasks.find(t => t.id === taskId)
     if (!task) return
     const taskAssignments = assignments.filter(a => a.task_id === taskId)
@@ -628,7 +639,7 @@ export default function EditSchedule() {
     finally { setCopyingKKA(false) }
   }
 
-  async function handleMoveTaskToSlot(taskId: string, date: string, hour: number) {
+  async function doMoveTaskToSlot(taskId: string, date: string, hour: number) {
     const task = tasks.find(t => t.id === taskId)
     if (!task) return
     const duration = task.end_datetime.getTime() - task.start_datetime.getTime()
@@ -650,6 +661,49 @@ export default function EditSchedule() {
         },
       })
     } catch { alert('שגיאה בהזזת משימה') }
+  }
+
+  function isoDay(d: Date) {
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
+  }
+
+  function handleDeleteTask(taskId: string) {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) return
+    const n = assignments.filter(a => a.task_id === taskId).length
+    setPendingAction({
+      message: `למחוק את "${task.task_type}"? (${n} חיילים משובצים)`,
+      execute: () => doDeleteTask(taskId),
+    })
+  }
+
+  function handleMoveTask(taskId: string, hourDelta: number) {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) { return }
+    const n = assignments.filter(a => a.task_id === taskId).length
+    const newStart = new Date(task.start_datetime.getTime() + hourDelta * 3_600_000)
+    const crossesDay = isoDay(task.start_datetime) !== isoDay(newStart)
+    if (n === 0 && !crossesDay) { doMoveTask(taskId, hourDelta); return }
+    setPendingAction({
+      message: crossesDay
+        ? `להעביר את "${task.task_type}" ליום אחר?`
+        : `להזיז את "${task.task_type}"? (${n} חיילים משובצים)`,
+      execute: () => doMoveTask(taskId, hourDelta),
+    })
+  }
+
+  function handleMoveTaskToSlot(taskId: string, date: string, hour: number) {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) { return }
+    const n = assignments.filter(a => a.task_id === taskId).length
+    const crossesDay = isoDay(task.start_datetime) !== date
+    if (n === 0 && !crossesDay) { doMoveTaskToSlot(taskId, date, hour); return }
+    setPendingAction({
+      message: crossesDay
+        ? `להעביר את "${task.task_type}" ליום אחר?`
+        : `להזיז את "${task.task_type}"? (${n} חיילים משובצים)`,
+      execute: () => doMoveTaskToSlot(taskId, date, hour),
+    })
   }
 
   async function handleCreateTaskAtSlot(date: string, hour: number, taskType: string) {
@@ -976,6 +1030,12 @@ export default function EditSchedule() {
         )
       })()}
 
+      {/* Always-visible validation panel */}
+      <div className="mb-3">
+        <ValidationPanel errors={validationErrors} tasks={tasks} dismissedKeys={dismissedKeys}
+          onDismiss={dismissError} onRestore={restoreError} />
+      </div>
+
       <div className="flex gap-4 items-start" dir="rtl">
         <div className="flex-1 min-w-0">
           {tasks.length === 0
@@ -991,6 +1051,7 @@ export default function EditSchedule() {
                 dayStartHour={schedule?.day_start_hour ?? 2}
                 homeLeaveHour={schedule?.home_leave_hour}
                 minDate={schedule?.start_datetime ? (() => { const d = schedule.start_datetime; return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })() : undefined}
+                taskErrors={taskErrors}
                 selectedTaskId={selectedTaskId}
                 currentSoldierId={highlightedSoldierId}
                 onSelectTask={id => setSelectedTaskId(prev => prev === id ? null : id)}
@@ -1163,6 +1224,14 @@ export default function EditSchedule() {
             : 'לפרסם את השבצ"ק? החיילים יראו את כל הימים.'}
           onConfirm={publish}
           onCancel={() => setConfirmPublish(false)}
+        />
+      )}
+
+      {pendingAction && (
+        <ConfirmModal
+          message={pendingAction.message}
+          onConfirm={async () => { const a = pendingAction; setPendingAction(null); await a.execute() }}
+          onCancel={() => setPendingAction(null)}
         />
       )}
     </AdminLayout>

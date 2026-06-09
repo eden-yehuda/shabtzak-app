@@ -11,7 +11,7 @@ import { schedulesRef } from '@/lib/firestore'
 import { db } from '@/lib/firebase'
 import type { Schedule, Task, Assignment, Soldier, LeaveRequest } from '@/types'
 
-interface SurveySettings { is_open: boolean; from: string; to: string; max_days: number }
+interface SurveySettings { is_open: boolean; from: string; to: string; max_days: number; intro_text?: string }
 
 // ── SOS Modal ────────────────────────────────────────────────────────────────
 function SOSModal({ tasks, assignments, soldiers, finalLeave, homeLeaveHour = 6, onClose }: {
@@ -508,6 +508,7 @@ export default function HomePage() {
           to={survey.to}
           maxDays={survey.max_days ?? 0}
           defaultSoldierId={selectedSoldierId}
+          introText={survey.intro_text}
           onClose={() => setShowLeave(false)}
         />
       )}

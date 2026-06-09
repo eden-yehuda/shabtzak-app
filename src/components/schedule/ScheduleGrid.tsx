@@ -30,6 +30,7 @@ interface Props {
   columnOrder?: string[]                          // custom column order (set by user drag)
   onReorderColumns?: (newOrder: string[]) => void // fires when user drags columns
   minDate?: string                                // hide days before this YYYY-MM-DD (tasks still overflow into first day)
+  taskErrors?: Record<string, string[]>   // task_id → error messages (builderMode red marking)
 }
 
 // Visual order right-to-left (RTL)
@@ -99,7 +100,7 @@ export default function ScheduleGrid({
   tasks, assignments, soldiers, finalLeave = [],
   currentSoldierId, builderMode, myTasksOnly, selectedTaskId, dayStartHour = 2, homeLeaveHour, showAllDays, onSelectTask, onRemoveSoldier, onEditAssignmentNote, onToggleActingCommander,
   onMoveTask, onResizeTask, onResizeTaskStart, onDeleteTask, onMoveTaskToSlot, onCreateTaskAtSlot,
-  onPairSoldiers, onUnpairSoldier, onDeleteColumn, onEditColumn, columnOrder, onReorderColumns, minDate,
+  onPairSoldiers, onUnpairSoldier, onDeleteColumn, onEditColumn, columnOrder, onReorderColumns, minDate, taskErrors,
 }: Props) {
   const DAY_START_HOUR = dayStartHour
   // HOME_LEAVE_START: when soldiers swap (depart/return). Defaults to DAY_START_HOUR.
@@ -752,6 +753,8 @@ export default function ScheduleGrid({
                           const isMine = currentSoldierId ? assigned.some(s => s.id === currentSoldierId) : false
                           const missing = task.required_people_count - assigned.length
                           const commanderMissing = task.requires_commander && !assigned.some(s => s.is_commander)
+                          const errorsForTask = (builderMode && taskErrors) ? (taskErrors[task.id] ?? []) : []
+                          const hasTaskErrors = errorsForTask.length > 0
 
                           const isMachlaket3 = task.notes === 'מחלקה 3'
                           const isSelected = task.id === selectedTaskId
@@ -810,7 +813,7 @@ export default function ScheduleGrid({
                                 </div>
                               )}
                               <div
-                                className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition relative ${cardExtraClass} ${canMoveDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                                className={`rounded-md border shadow-sm px-1.5 py-1 text-center h-full min-h-[28px] flex flex-col justify-center transition relative ${cardExtraClass} ${hasTaskErrors ? 'ring-2 ring-red-500 ring-offset-1' : ''} ${canMoveDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
                                 style={cardStyle}
                                 onMouseDown={canMoveDrag ? (e: React.MouseEvent) => {
                                   e.preventDefault()
@@ -843,6 +846,10 @@ export default function ScheduleGrid({
                                   </div>
                                 )}
                                 <div className="space-y-0.5">
+                                  {hasTaskErrors && (
+                                    <div className="absolute top-0 right-0 z-20 text-red-600 text-[11px] leading-none px-0.5"
+                                      title={errorsForTask.join('\n')}>⚠️</div>
+                                  )}
                                   <div className="text-[9px] mb-0.5 opacity-60" dir="ltr">{timeLabel}</div>
                                   {isMachlaket3 ? (
                                     <div className="text-xs font-semibold text-slate-500">מחלקה 3</div>

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import type { Soldier, Assignment, Task, LeaveRequest } from '@/types'
 import { createAssignment } from '@/lib/firestore'
-import { hoursGap } from '@/utils/dateUtils'
+import { hoursGap, isSoldierInactiveOnDate } from '@/utils/dateUtils'
 import { isAllowedConcurrent } from '@/utils/validation'
 
 interface Props {
@@ -83,11 +83,17 @@ function canAssignByLeaveStatus(status: HomeStatus, task: Task | null, homeLeave
 export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave, selectedTaskId, homeLeaveHour = 2, onAssigned }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [soldierModalId, setSoldierModalId] = useState<string | null>(null)
+  const [othersOpen, setOthersOpen] = useState(false)
 
   const selectedTask = useMemo(() => tasks.find(t => t.id === selectedTaskId) ?? null, [tasks, selectedTaskId])
   const taskDate = selectedTask ? isoDate(selectedTask.start_datetime) : null
 
-  const enriched = useMemo(() => soldiers.filter(s => s.is_active).map(s => {
+  const enriched = useMemo(() => soldiers.filter(s => {
+    if (!s.is_active) return false
+    // Hide soldiers who are inactive on the selected task's day (per-day hiding)
+    if (taskDate && isSoldierInactiveOnDate(s, taskDate)) return false
+    return true
+  }).map(s => {
     const myAssignments = assignments.filter(a => a.soldier_id === s.id)
     const myTasks = myAssignments.map(a => tasks.find(t => t.id === a.task_id)).filter((t): t is Task => !!t)
     const taskCount = myTasks.length
@@ -147,8 +153,26 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
     })
   }
 
-  // Single unified list: commanders first within each availability tier
+  // Recommended = present + adequate rest (≥8h or never worked) + not concurrent.
+  function isRecommended(item: Item): boolean {
+    if (item.status.key !== 'present') return false
+    if (item.isConcurrent) return false
+    if (item.restHours !== null && item.restHours < 8) return false
+    return true
+  }
+
+  // When no task selected: single flat list (ranking is meaningless without a task).
   const unifiedList = useMemo(() => sortByAvailability(enriched, true), [enriched])
+
+  // When a task IS selected: split into recommended (top, always open) and the rest (collapsed).
+  const recommended = useMemo(
+    () => selectedTaskId ? sortByAvailability(enriched.filter(isRecommended), true) : [],
+    [enriched, selectedTaskId]
+  )
+  const others = useMemo(
+    () => selectedTaskId ? sortByAvailability(enriched.filter(x => !isRecommended(x)), true) : [],
+    [enriched, selectedTaskId]
+  )
 
   const requiresCommander = selectedTask?.requires_commander ?? false
 
@@ -295,11 +319,36 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
         </div>
       )}
 
-      {/* Soldiers list — unified, commanders first */}
+      {/* Soldiers list */}
       <div className="flex flex-col gap-2 overflow-y-auto flex-1">
-        <div className="grid grid-cols-2 gap-1">
-          {unifiedList.map(item => renderSoldierButton(item))}
-        </div>
+        {selectedTaskId ? (
+          <>
+            {/* Recommended */}
+            <div className="text-[11px] font-bold text-emerald-700 px-1">⭐ מומלצים ({recommended.length})</div>
+            {recommended.length > 0 ? (
+              <div className="grid grid-cols-2 gap-1">
+                {recommended.map(item => renderSoldierButton(item))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 italic px-1">אין חיילים מומלצים זמינים</p>
+            )}
+
+            {/* Others (collapsible) */}
+            <button onClick={() => setOthersOpen(o => !o)}
+              className="text-[11px] font-bold text-slate-500 hover:text-slate-700 px-1 border-t border-slate-200 pt-2 mt-1 text-right">
+              {othersOpen ? '▼' : '▶'} שאר החיילים ({others.length})
+            </button>
+            {othersOpen && (
+              <div className="grid grid-cols-2 gap-1">
+                {others.map(item => renderSoldierButton(item))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="grid grid-cols-2 gap-1">
+            {unifiedList.map(item => renderSoldierButton(item))}
+          </div>
+        )}
       </div>
 
       {/* Modal: soldier's assignments + leave */}
