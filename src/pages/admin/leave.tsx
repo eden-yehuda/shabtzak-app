@@ -7,6 +7,7 @@ import { addDoc, deleteDoc, doc, updateDoc, setDoc, onSnapshot, getDocs, query, 
 import { leaveRequestsRef, leaveVersionsRef } from '@/lib/firestore'
 import { db } from '@/lib/firebase'
 import { matchSoldierName } from '@/utils/sheetParser'
+import { DEFAULT_INTRO_TEXT } from '@/lib/surveyDefaults'
 import type { Soldier } from '@/types'
 
 interface SurveySettings {
@@ -14,6 +15,7 @@ interface SurveySettings {
   from: string
   to: string
   max_days: number
+  intro_text?: string
 }
 
 function daysInRange(from: string, to: string): string[] {
@@ -61,6 +63,8 @@ export default function AdminLeavePage() {
   const [draftMaxDays, setDraftMaxDays] = useState(3)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
+  const [draftIntro, setDraftIntro] = useState('')
+  const [savingIntro, setSavingIntro] = useState(false)
 
   // ── Undo stack (last 20 ops) + Ctrl+Z ────────────────────────────────────
   type UndoAction = { label: string; undo: () => Promise<void> }
@@ -193,13 +197,28 @@ export default function AdminLeavePage() {
     })
   }, [])
 
+  // Seed the intro editor from the stored value (or the default when none saved yet).
+  // onSnapshot only re-fires on Firestore changes, not on local keystrokes, so this
+  // never clobbers the admin while typing.
+  useEffect(() => {
+    setDraftIntro(survey?.intro_text ?? DEFAULT_INTRO_TEXT)
+  }, [survey?.intro_text])
+
   async function openSurvey() {
     if (!draftFrom || !draftTo) return
-    await setDoc(doc(db, 'settings', 'leave_survey'), { is_open: true, from: draftFrom, to: draftTo, max_days: draftMaxDays })
+    await setDoc(doc(db, 'settings', 'leave_survey'), { is_open: true, from: draftFrom, to: draftTo, max_days: draftMaxDays }, { merge: true })
   }
 
   async function closeSurvey() {
-    await setDoc(doc(db, 'settings', 'leave_survey'), { is_open: false, from: survey?.from ?? '', to: survey?.to ?? '', max_days: survey?.max_days ?? 3 })
+    await setDoc(doc(db, 'settings', 'leave_survey'), { is_open: false, from: survey?.from ?? '', to: survey?.to ?? '', max_days: survey?.max_days ?? 3 }, { merge: true })
+  }
+
+  async function saveIntro() {
+    setSavingIntro(true)
+    try {
+      await setDoc(doc(db, 'settings', 'leave_survey'), { intro_text: draftIntro }, { merge: true })
+    } catch (e) { alert('שמירת טקסט הפתיחה נכשלה: ' + (e as Error).message) }
+    finally { setSavingIntro(false) }
   }
 
   function isoDateLocal(d: Date) {
@@ -326,7 +345,7 @@ export default function AdminLeavePage() {
           from: firstDate,
           to: lastDate,
           max_days: survey?.max_days ?? 5,
-        })
+        }, { merge: true })
       }
 
       // 2. Build sheet map: date → Set<soldierId>
@@ -514,6 +533,37 @@ export default function AdminLeavePage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Survey intro text editor */}
+      <div className="rounded-xl p-4 mb-5 border bg-slate-50 border-slate-200">
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <span className="text-sm font-bold text-slate-700">📝 טקסט פתיחה לסקר היציאות</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setDraftIntro(DEFAULT_INTRO_TEXT)}
+              className="text-slate-500 border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-semibold hover:bg-slate-100 transition"
+            >
+              שחזר ברירת מחדל
+            </button>
+            <button
+              onClick={saveIntro}
+              disabled={savingIntro || draftIntro === (survey?.intro_text ?? DEFAULT_INTRO_TEXT)}
+              className="bg-navy text-white rounded-lg px-4 py-1.5 text-sm font-semibold disabled:opacity-40 hover:bg-navy-light transition"
+            >
+              {savingIntro ? 'שומר...' : 'שמור טקסט'}
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-slate-400 mb-2">הטקסט שיוצג ללוחמים במסך ההנחיות בפתיחת הסקר. כל שורה תופיע בנפרד.</p>
+        <textarea
+          value={draftIntro}
+          onChange={e => setDraftIntro(e.target.value)}
+          rows={6}
+          dir="rtl"
+          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:border-navy"
+          placeholder="הקלד את טקסט הפתיחה..."
+        />
       </div>
 
       {/* Pending warning */}
