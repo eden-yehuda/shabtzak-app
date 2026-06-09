@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { onSnapshot, query, where, addDoc, deleteDoc, doc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { leaveRequestsRef } from '@/lib/firestore'
+import { DEFAULT_INTRO_TEXT } from '@/lib/surveyDefaults'
 import type { Soldier, LeaveRequest } from '@/types'
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
   maxDays: number
   onClose: () => void
   defaultSoldierId?: string | null
+  introText?: string
 }
 
 const DAY_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
@@ -44,14 +46,6 @@ function isFriday(date: string): boolean {
   if (date === SHAVUOT) return true
   return new Date(date + 'T12:00:00').getDay() === 5
 }
-
-// Disclaimer text
-const DISCLAIMER_RULES = [
-  { icon: '📅', text: 'לבחור 6 ימים מקסימום. שבת אחת ושישי אחד (או חג) מותר ברצף.' },
-  { icon: '🔗', text: 'יש לרשום לפחות יומיים ברצף כדי לא ליצור בלאגן של יוצאים חוזרים.' },
-  { icon: '✡️', text: 'שישי 22/5 הוא חג שבועות — מתייחסים אליו כמו שישי או שבת.' },
-  { icon: '🪖', text: 'יום ראשון 17/5 הוא יום פלוגה (אימון + ערב). לא יוצאים למעט חריגים.' },
-]
 
 function computeWarnings(selectedDates: string[], maxDays: number): string[] {
   const warnings: string[] = []
@@ -89,7 +83,7 @@ function computeWarnings(selectedDates: string[], maxDays: number): string[] {
   return warnings
 }
 
-export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose, defaultSoldierId }: Props) {
+export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose, defaultSoldierId, introText }: Props) {
   const [soldierId, setSoldierId] = useState(defaultSoldierId ?? '')
   const [search, setSearch] = useState(() =>
     defaultSoldierId ? (soldiers.find(s => s.id === defaultSoldierId)?.full_name ?? '') : ''
@@ -194,12 +188,9 @@ export default function LeaveRequestModal({ soldiers, from, to, maxDays, onClose
               <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2">×</button>
             </div>
             <div className="flex-1 overflow-y-auto px-4 py-5 flex flex-col gap-3">
-              {DISCLAIMER_RULES.map((r, i) => (
-                <div key={i} className="flex gap-3 items-start bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-                  <span className="text-2xl shrink-0">{r.icon}</span>
-                  <p className="text-sm text-slate-800 leading-snug">{r.text}</p>
-                </div>
-              ))}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{introText?.trim() ? introText : DEFAULT_INTRO_TEXT}</p>
+              </div>
               <p className="text-xs text-slate-400 text-center mt-2">יש לאשר שקראת את ההנחיות לפני מילוי הסקר</p>
             </div>
             <div className="px-4 py-4 border-t border-slate-200 bg-white">
