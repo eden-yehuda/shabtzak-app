@@ -72,9 +72,13 @@ export interface LeaveRequest {
   reviewed_by?: string
 }
 
+// Severity tier: 1 = critical (אדום), 2 = severe (כתום), 3 = medium (ענבר), 4 = minor (אפור)
+export type ErrorSeverity = 1 | 2 | 3 | 4
+
 export interface ValidationError {
   type: 'error' | 'warning'
   message: string
   soldier_id?: string
   task_id?: string
+  severity?: ErrorSeverity
 }
