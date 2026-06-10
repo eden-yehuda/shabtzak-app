@@ -88,6 +88,62 @@ describe('validateSchedule', () => {
     expect(errors.some(e => e.type === 'error' && e.message.includes('שוויונית'))).toBe(true)
   })
 
+  it('assigns severity tiers: double-booking=1, understaffed=2, rest=3', () => {
+    // double booking (severity 1)
+    const dbTasks: Task[] = [
+      makeTask('t1', '2026-04-27T08:00', '2026-04-27T12:00'),
+      makeTask('t2', '2026-04-27T10:00', '2026-04-27T14:00'),
+    ]
+    const dbAssign: Assignment[] = [
+      { id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 },
+      { id: 'a2', task_id: 't2', soldier_id: 's1', order: 0 },
+    ]
+    const dbErrors = validateSchedule(dbTasks, dbAssign, [makeSoldier('s1')], noLeave)
+    expect(dbErrors.find(e => e.message.includes('כפול'))?.severity).toBe(1)
+
+    // understaffed (severity 2)
+    const usErrors = validateSchedule(
+      [makeTask('t1', '2026-04-27T08:00', '2026-04-27T12:00')],
+      [{ id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 }],
+      [makeSoldier('s1')],
+      noLeave
+    )
+    expect(usErrors.find(e => e.message.includes('חסרים'))?.severity).toBe(2)
+
+    // insufficient rest (severity 3)
+    const restErrors = validateSchedule(
+      [
+        makeTask('t1', '2026-04-27T00:00', '2026-04-27T04:00'),
+        makeTask('t2', '2026-04-27T08:00', '2026-04-27T12:00'),
+      ],
+      [
+        { id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 },
+        { id: 'a2', task_id: 't2', soldier_id: 's1', order: 0 },
+      ],
+      [makeSoldier('s1')],
+      noLeave
+    )
+    expect(restErrors.find(e => e.message.includes('מנוחה'))?.severity).toBe(3)
+  })
+
+  it('sorts errors by severity (most severe first)', () => {
+    // Build a schedule with both an understaffed task (sev 2) and a double booking (sev 1)
+    const tasks: Task[] = [
+      makeTask('t1', '2026-04-27T08:00', '2026-04-27T12:00'),
+      makeTask('t2', '2026-04-27T10:00', '2026-04-27T14:00'),
+    ]
+    const assignments: Assignment[] = [
+      { id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 },
+      { id: 'a2', task_id: 't2', soldier_id: 's1', order: 0 },
+      // t1 still understaffed (needs 2, has 1), t2 understaffed too
+    ]
+    const errors = validateSchedule(tasks, assignments, [makeSoldier('s1')], noLeave)
+    const severities = errors.map(e => e.severity ?? 99)
+    const sorted = [...severities].sort((a, b) => a - b)
+    expect(severities).toEqual(sorted)
+    expect(severities[0]).toBe(1) // most severe first
+  })
+
   it('returns no errors for a valid schedule', () => {
     const tasks: Task[] = [
       makeTask('t1', '2026-04-27T08:00', '2026-04-27T12:00'),
