@@ -4,9 +4,9 @@ import { onAuthStateChanged, signInWithEmailAndPassword, type User } from 'fireb
 import { auth } from '@/lib/firebase'
 
 const VIEWER_EMAIL = 'viewer@shivzuk.app'
-// User types the short password (e.g. 'עוף'); Firebase requires >=6 chars, so we prepend
-// a fixed public prefix. The prefix is not secret — security rests on the typed password.
-// Must stay in sync with scripts/create-viewer-user.mjs.
+// Answer is prepended with a fixed prefix to satisfy Firebase's >=6 char minimum.
+// The prefix is not secret — security rests on knowing the answer.
+// Must stay in sync with scripts/create-viewer-user.mjs and update-viewer-password.mjs.
 const VIEWER_PW_PREFIX = 'shivzuk-'
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
@@ -41,25 +41,26 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-navy flex items-center justify-center px-4" dir="rtl">
       <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm text-center">
-        <h1 className="text-2xl font-bold text-navy mb-1">שבצ&quot;ק עוף</h1>
-        <p className="text-sm text-slate-500 mb-6">הזן סיסמה כדי להיכנס</p>
+        <h1 className="text-2xl font-bold text-navy mb-6">שבצ&quot;ק עוף</h1>
         <form onSubmit={submit} className="space-y-4">
+          <p className="text-base font-semibold text-slate-700">מה שמו של המ&quot;פ?</p>
           <input
-            type="password"
-            placeholder="סיסמה"
+            type="text"
+            placeholder="תשובה..."
             value={password}
             onChange={e => setPassword(e.target.value)}
             autoFocus
+            autoComplete="off"
             className="w-full border border-slate-300 rounded-xl px-4 py-3 text-center focus:outline-none focus:ring-2 focus:ring-navy"
             required
           />
-          {error && <p className="text-red-500 text-sm">{error}</p>}
+          {error && <p className="text-red-500 text-sm">תשובה שגויה</p>}
           <button
             type="submit"
             disabled={loading}
             className="w-full bg-navy text-white rounded-xl py-3 font-semibold disabled:opacity-50"
           >
-            {loading ? 'נכנס...' : 'כניסה'}
+            {loading ? 'בודק...' : 'כניסה'}
           </button>
         </form>
       </div>
