@@ -66,6 +66,7 @@ export function validateSchedule(
       const soldier = soldierMap[a.soldier_id]
       errors.push({
         type: 'error',
+        severity: 1,
         soldier_id: a.soldier_id,
         task_id: a.task_id,
         message: `${soldier?.full_name ?? a.soldier_id}: משובץ ל-${task.task_name} בתאריך שהוא בבית`,
@@ -87,6 +88,7 @@ export function validateSchedule(
         ) {
           errors.push({
             type: 'error',
+            severity: 1,
             soldier_id,
             task_id: sorted[i].id,
             message: `${soldierMap[soldier_id]?.full_name ?? soldier_id}: שיבוץ כפול — ${sorted[i].task_name} ו-${sorted[j].task_name}`,
@@ -107,6 +109,7 @@ export function validateSchedule(
       if (gap >= 0 && gap < MIN_REST_HOURS) {
         errors.push({
           type: 'error',
+          severity: 3,
           soldier_id,
           task_id: realShifts[i + 1].id,
           message: `${soldierMap[soldier_id]?.full_name ?? soldier_id}: רק ${gap.toFixed(0)}ש׳ מנוחה בין ${realShifts[i].task_name} ל-${realShifts[i + 1].task_name} (נדרש ${MIN_REST_HOURS}ש׳)`,
@@ -123,6 +126,7 @@ export function validateSchedule(
     if (count < task.required_people_count) {
       errors.push({
         type: 'error',
+        severity: 2,
         task_id: task.id,
         message: `${task.task_name}: חסרים ${task.required_people_count - count} חיילים`,
       })
@@ -140,6 +144,7 @@ export function validateSchedule(
     if (!hasCommander) {
       errors.push({
         type: 'error',
+        severity: 2,
         task_id: task.id,
         message: `${task.task_name}: נדרש מפקד — אף מפקד לא משובץ`,
       })
@@ -184,15 +189,19 @@ export function validateSchedule(
         const minName = soldierMap[minSoldier?.sid ?? '']?.full_name ?? '?'
         errors.push({
           type: 'error',
+          severity: 4,
           message: `חלוקה לא שוויונית בין לוחמים נוכחים: ${maxName} עומס מנורמל ${max.toFixed(0)}ש׳, ${minName} ${min.toFixed(0)}ש׳ (הפרש ${(max - min).toFixed(0)}ש׳)`,
         })
       }
     }
   }
 
-  // ─── Sort errors chronologically by associated task date ────────────
+  // ─── Sort errors by severity (most severe first), then chronologically ───
   const taskById = new Map(tasks.map(t => [t.id, t]))
   errors.sort((a, b) => {
+    const sa = a.severity ?? 99
+    const sb = b.severity ?? 99
+    if (sa !== sb) return sa - sb
     const ta = a.task_id ? taskById.get(a.task_id)?.start_datetime.getTime() ?? Infinity : Infinity
     const tb = b.task_id ? taskById.get(b.task_id)?.start_datetime.getTime() ?? Infinity : Infinity
     return ta - tb

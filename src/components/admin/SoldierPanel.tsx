@@ -153,11 +153,15 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
     })
   }
 
-  // Recommended = present + adequate rest (≥8h or never worked) + not concurrent.
+  // Recommended = actually available for THIS task. Rest is NOT a filter — it only
+  // affects ranking (sortByAvailability favors more rest). A soldier is irrelevant
+  // ONLY if assigned concurrently, fully home that day, or (leaving/returning) not
+  // available during the task's time window.
   function isRecommended(item: Item): boolean {
-    if (item.status.key !== 'present') return false
-    if (item.isConcurrent) return false
-    if (item.restHours !== null && item.restHours < 8) return false
+    if (item.isConcurrent) return false                  // משובץ במקביל
+    if (item.status.key === 'stayingHome') return false  // בבית (יום שלם)
+    // יוצא/חוזר — מומלץ רק אם זמין בפועל בחלון הזמן של המשימה
+    if (!canAssignByLeaveStatus(item.status.key, selectedTask, homeLeaveHour)) return false
     return true
   }
 
