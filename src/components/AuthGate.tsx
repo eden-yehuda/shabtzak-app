@@ -41,9 +41,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-navy flex items-center justify-center px-4" dir="rtl">
       <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm text-center">
-        <h1 className="text-2xl font-bold text-navy mb-6">שבצ&quot;ק עוף</h1>
-        <form onSubmit={submit} className="space-y-4">
-          <p className="text-base font-semibold text-slate-700">מה שמו של המ&quot;פ?</p>
+        <h1 className="text-xl font-bold text-navy mb-1">ברוכים הבאים לש&quot;ג של צוות עוף</h1>
+        <form onSubmit={submit} className="space-y-4 mt-6">
+          <p className="text-base font-semibold text-slate-700">מה שם המ&quot;פ?</p>
           <input
             type="text"
             placeholder="תשובה..."
