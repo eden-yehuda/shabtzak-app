@@ -2,49 +2,55 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ─── Default: authenticated users (= admins) can read/write everything ─────
-    // Anyone with a valid Firebase Auth session is treated as admin.
-    // (To restrict further, list specific UIDs and check request.auth.uid in [...].)
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    // Any signed-in user (shared viewer OR an admin) — gates public read access.
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    // An admin is any authenticated user that is NOT the shared read-only viewer account.
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email != 'viewer@shivzuk.app';
     }
 
-    // ─── Public read for core collections (soldier-facing app uses no auth) ───
-    match /soldiers/{id}            { allow read: if true; }
-    match /schedules/{id}           { allow read: if true; }
-    match /tasks/{id}               { allow read: if true; }
-    match /assignments/{id}         { allow read: if true; }
-    match /task_types/{id}          { allow read: if true; }
-    match /published_versions/{id}  { allow read: if true; }
-    match /conditions/{id}          { allow read: if true; }
+    // ─── Default: admins only. Reading now requires authentication everywhere. ───
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // ─── Core collections: readable by any signed-in user (viewer or admin) ───
+    match /soldiers/{id}            { allow read: if isSignedIn(); }
+    match /schedules/{id}           { allow read: if isSignedIn(); }
+    match /tasks/{id}               { allow read: if isSignedIn(); }
+    match /assignments/{id}         { allow read: if isSignedIn(); }
+    match /task_types/{id}          { allow read: if isSignedIn(); }
+    match /published_versions/{id}  { allow read: if isSignedIn(); }
+    match /conditions/{id}          { allow read: if isSignedIn(); }
 
     // ─── Leave requests (soldiers submit) ────────────────────────────────────
-    // Public can CREATE only pending, non-final requests.
-    // Direct creation of approved/final requests is BLOCKED — admin must approve.
+    // Signed-in users can CREATE only pending, non-final requests.
     match /leave_requests/{id} {
-      allow read: if true;
-      allow create: if request.resource.data.status == 'pending'
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+                 && request.resource.data.status == 'pending'
                  && request.resource.data.is_final == false;
-      // Updates and deletes require admin authentication
-      allow update, delete: if request.auth != null;
+      allow update, delete: if isAdmin();
     }
 
     // ─── Inquiries (soldiers send messages to admin) ──────────────────────────
-    // Public can create new inquiries (must start with read=false).
+    // Signed-in users can create new inquiries (must start with read=false).
     // Only admin can read/update/delete.
     match /inquiries/{id} {
-      allow read: if request.auth != null;
-      allow create: if request.resource.data.read == false;
-      allow update, delete: if request.auth != null;
+      allow read: if isAdmin();
+      allow create: if isSignedIn() && request.resource.data.read == false;
+      allow update, delete: if isAdmin();
     }
 
-    // ─── Leave versions / settings — admin only ──────────────────────────────
+    // ─── Leave versions / settings ────────────────────────────────────────────
     match /leave_versions/{id} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAdmin();
     }
     match /settings/{id} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
   }
 }
