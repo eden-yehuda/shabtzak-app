@@ -1,8 +1,8 @@
 import type { Task, Assignment, Soldier, LeaveRequest, ValidationError } from '@/types'
 import { doTasksOverlap, hoursGap } from './dateUtils'
 
-const MIN_REST_HOURS = 16
-const MAX_HOUR_IMBALANCE = 8
+const MIN_REST_HOURS = 8
+const MAX_HOUR_IMBALANCE = 12
 // Task types that don't count as a "real shift" for rest-gap purposes
 const NO_REST_IMPACT_TYPES = new Set(['כוננות'])
 
@@ -166,11 +166,12 @@ export function validateSchedule(
   // ─── 5. Commander required but missing ──────────────────────────────
   for (const task of tasks) {
     if (!task.requires_commander) continue
-    const assignedSoldiers = assignments
-      .filter(a => a.task_id === task.id)
-      .map(a => soldierMap[a.soldier_id])
-      .filter((s): s is Soldier => !!s)
-    const hasCommander = assignedSoldiers.some(s => s.is_commander)
+    const taskAssignments = assignments.filter(a => a.task_id === task.id)
+    // A task has a commander if any assigned soldier is_commander (profile) OR is_acting_commander (★ per-task)
+    const hasCommander = taskAssignments.some(a => {
+      if (a.is_acting_commander) return true
+      return soldierMap[a.soldier_id]?.is_commander ?? false
+    })
     if (!hasCommander) {
       errors.push({
         type: 'error',
