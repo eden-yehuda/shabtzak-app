@@ -69,8 +69,8 @@ export default function EditColumnModal({ taskType, tasks, onClose, onSave }: Pr
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
 
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-5 text-sm text-amber-800">
-          ⚠️ שמירה תמחק את כל {tasks.length} המשימות הקיימות בעמודה (ואת השיבוצים) ותיצור אותן מחדש.
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 mb-5 text-sm text-blue-800">
+          ℹ️ שמירה תעדכן את {tasks.length} המשימות בעמודה. שיבוצים קיימים יישמרו.
         </div>
 
         <div className="space-y-4">
