@@ -1,10 +1,14 @@
 import type { Task, Assignment, Soldier, LeaveRequest, ValidationError } from '@/types'
 import { doTasksOverlap, hoursGap } from './dateUtils'
 
-const MIN_REST_HOURS = 8
 const MAX_HOUR_IMBALANCE = 12
-// Task types that don't count as a "real shift" for rest-gap purposes
-const NO_REST_IMPACT_TYPES = new Set(['כוננות'])
+// Task types that count as "rest" — soldier is available/on standby but not on an operational mission.
+// These do NOT require recovery time afterward and are not counted as shifts for rest-gap purposes.
+const REST_TASK_TYPES = new Set(['כוננות', 'כוננות א', 'כוננות ב', 'בלת"מ'])
+
+function isRestType(task: Task): boolean {
+  return REST_TASK_TYPES.has(task.task_type) || REST_TASK_TYPES.has(task.task_name)
+}
 
 // Pairs of task types that are explicitly allowed to overlap for the same soldier.
 export const ALLOWED_CONCURRENT_TYPES: Array<[string, string]> = [
@@ -128,21 +132,27 @@ export function validateSchedule(
     }
   }
 
-  // ─── 3. Insufficient rest (<16h between non-כוננות tasks) ───────────
+  // ─── 3. Insufficient rest between operational missions (1:2 ratio) ──────
+  // כוננות א/ב and בלת"מ count as "rest" — they don't impose a recovery requirement.
+  // For every other task type: the soldier needs at least 2× the task duration as rest
+  // before the next operational mission (e.g. 8h mission → 16h rest minimum).
   for (const [soldier_id, stasks] of Object.entries(soldierTasks)) {
-    // Only count "real" shifts — exclude כוננות from rest calculation
-    const realShifts = stasks
-      .filter(t => !NO_REST_IMPACT_TYPES.has(t.task_type))
+    const operationalShifts = stasks
+      .filter(t => !isRestType(t))
       .sort((a, b) => a.start_datetime.getTime() - b.start_datetime.getTime())
-    for (let i = 0; i + 1 < realShifts.length; i++) {
-      const gap = hoursGap(realShifts[i].end_datetime, realShifts[i + 1].start_datetime)
-      if (gap >= 0 && gap < MIN_REST_HOURS) {
+    for (let i = 0; i + 1 < operationalShifts.length; i++) {
+      const prev = operationalShifts[i]
+      const next = operationalShifts[i + 1]
+      const prevDuration = hoursGap(prev.start_datetime, prev.end_datetime)
+      const minRest = prevDuration * 2   // 1:2 ratio
+      const gap = hoursGap(prev.end_datetime, next.start_datetime)
+      if (gap >= 0 && gap < minRest) {
         errors.push({
           type: 'error',
           severity: 3,
           soldier_id,
-          task_id: realShifts[i + 1].id,
-          message: `${soldierMap[soldier_id]?.full_name ?? soldier_id}: רק ${gap.toFixed(0)}ש׳ מנוחה בין ${realShifts[i].task_name} ל-${realShifts[i + 1].task_name} (נדרש ${MIN_REST_HOURS}ש׳)`,
+          task_id: next.id,
+          message: `${soldierMap[soldier_id]?.full_name ?? soldier_id}: רק ${gap.toFixed(0)}ש׳ מנוחה בין ${prev.task_name} ל-${next.task_name} (נדרש ${minRest.toFixed(0)}ש׳ — יחס 1:2)`,
         })
       }
     }
