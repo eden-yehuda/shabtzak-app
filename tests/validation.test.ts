@@ -33,6 +33,7 @@ const makeLeave = (soldierId: string, date: string): LeaveRequest => ({
   date,
   status: 'approved',
   is_final: true,
+  created_at: new Date('2026-01-01'),
 })
 
 describe('validateSchedule', () => {
