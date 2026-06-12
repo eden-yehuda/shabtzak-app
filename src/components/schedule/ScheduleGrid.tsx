@@ -301,6 +301,16 @@ export default function ScheduleGrid({
     return { days: sortedDays, allColumns: cols }
   }, [tasks, assignments, finalLeave, myTasksOnly, currentSoldierId, builderMode, showAllDays, columnOrder, minDate])
 
+  // Display name per column: task_name of the first task with that task_type.
+  // Falls back to the task_type string if no tasks exist yet for a type.
+  const colDisplayName = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const t of tasks) {
+      if (!map[t.task_type]) map[t.task_type] = t.task_name
+    }
+    return map
+  }, [tasks])
+
   // Time line: show only when nowMilitaryDay is actually in the grid.
   // If we're before the schedule starts (e.g. 00:31 on day 1 when schedule starts at 14:00),
   // nowMilitaryDay is yesterday (not in grid) — don't show the line at all.
@@ -581,7 +591,7 @@ export default function ScheduleGrid({
                         {builderMode && onReorderColumns && (
                           <span className="absolute top-0.5 right-0.5 text-[8px] opacity-30 select-none pointer-events-none">⠿</span>
                         )}
-                        {col}
+                        {colDisplayName[col] ?? col}
                         {builderMode && (onDeleteColumn || onEditColumn) && (
                           <div className="absolute top-0.5 left-0.5">
                             <button
