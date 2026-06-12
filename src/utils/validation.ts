@@ -2,12 +2,22 @@ import type { Task, Assignment, Soldier, LeaveRequest, ValidationError } from '@
 import { doTasksOverlap, hoursGap } from './dateUtils'
 
 const MAX_HOUR_IMBALANCE = 12
-// Task types that count as "rest" — soldier is available/on standby but not on an operational mission.
-// These do NOT require recovery time afterward and are not counted as shifts for rest-gap purposes.
-const REST_TASK_TYPES = new Set(['כוננות', 'כוננות א', 'כוננות ב', 'בלת"מ'])
+
+// Task types that count as "rest" — standby/on-call, not an active operational mission.
+// REST types: do NOT trigger rest requirements afterward, and may overlap with other tasks
+// without generating a double-booking error.
+const REST_TASK_TYPES = new Set(['כוננות', 'כוננות א', 'כוננות ב', 'בלת"מ', 'כ"כ ב'])
 
 function isRestType(task: Task): boolean {
   return REST_TASK_TYPES.has(task.task_type) || REST_TASK_TYPES.has(task.task_name)
+}
+
+// Operational mission types that require a 1:2 rest ratio before the next operational mission.
+// (e.g. 8h patrol → 16h rest before the next patrol/attack)
+const OPERATIONAL_TASK_TYPES = new Set(['סיור', 'התקפי'])
+
+function isOperationalType(task: Task): boolean {
+  return OPERATIONAL_TASK_TYPES.has(task.task_type) || OPERATIONAL_TASK_TYPES.has(task.task_name)
 }
 
 // Pairs of task types that are explicitly allowed to overlap for the same soldier.
@@ -84,16 +94,21 @@ export function validateSchedule(
 
     let homeError = false
     if (isHomeOnDate && wasHomeYest) {
-      // stayingHome — never assignable
+      // stayingHome — soldier is away the entire day, never assignable
       homeError = true
-    } else if (isHomeOnDate && !wasHomeYest) {
-      // leavingToday — error if task extends past homeLeaveHour
-      const taskEndDate = task.end_datetime.toISOString().split('T')[0]
-      const taskEndH    = task.end_datetime.getHours()
-      if (taskEndDate !== taskDateStr || taskEndH > homeLeaveHour) homeError = true
-    } else if (!isHomeOnDate && wasHomeYest) {
-      // returningToday — error if task starts before homeLeaveHour
-      if (task.start_datetime.getHours() < homeLeaveHour) homeError = true
+    } else if (homeLeaveHour > 0) {
+      // Hour-based checks only when the swap hour is configured (homeLeaveHour > 0).
+      // Without a configured swap hour we can't know exactly when the soldier leaves/returns,
+      // so we don't flag leavingToday / returningToday cases.
+      if (isHomeOnDate && !wasHomeYest) {
+        // leavingToday — soldier leaves at homeLeaveHour; error if task extends past that
+        const taskEndDate = task.end_datetime.toISOString().split('T')[0]
+        const taskEndH    = task.end_datetime.getHours()
+        if (taskEndDate !== taskDateStr || taskEndH > homeLeaveHour) homeError = true
+      } else if (!isHomeOnDate && wasHomeYest) {
+        // returningToday — soldier returns at homeLeaveHour; error if task starts before that
+        if (task.start_datetime.getHours() < homeLeaveHour) homeError = true
+      }
     }
 
     if (homeError) {
@@ -109,10 +124,12 @@ export function validateSchedule(
   }
 
   // ─── 2. Overlapping tasks (same soldier in two tasks at the same time) ───
+  // REST types (כוננות א/ב, כ"כ ב, בלת"מ) may legitimately overlap with other tasks — skip them.
   for (const [soldier_id, stasks] of Object.entries(soldierTasks)) {
     const sorted = [...stasks].sort((a, b) => a.start_datetime.getTime() - b.start_datetime.getTime())
     for (let i = 0; i < sorted.length; i++) {
       for (let j = i + 1; j < sorted.length; j++) {
+        if (isRestType(sorted[i]) || isRestType(sorted[j])) continue  // rest can overlap anything
         if (
           doTasksOverlap(
             { start: sorted[i].start_datetime, end: sorted[i].end_datetime },
@@ -132,19 +149,21 @@ export function validateSchedule(
     }
   }
 
-  // ─── 3. Insufficient rest between operational missions (1:2 ratio) ──────
-  // כוננות א/ב and בלת"מ count as "rest" — they don't impose a recovery requirement.
-  // For every other task type: the soldier needs at least 2× the task duration as rest
-  // before the next operational mission (e.g. 8h mission → 16h rest minimum).
+  // ─── 3. Insufficient rest before operational missions (1:2 ratio) ──────
+  // Applies only when the NEXT task is an OPERATIONAL mission (סיור, התקפי).
+  // REST types (כוננות, כ"כ ב, בלת"מ) are filtered out of the sequence — they count as rest time.
+  // The required rest = 2 × the duration of the upcoming operational mission.
+  // Example: before an 8h patrol, need 16h rest from the end of the previous non-rest task.
   for (const [soldier_id, stasks] of Object.entries(soldierTasks)) {
-    const operationalShifts = stasks
+    const nonRestShifts = stasks
       .filter(t => !isRestType(t))
       .sort((a, b) => a.start_datetime.getTime() - b.start_datetime.getTime())
-    for (let i = 0; i + 1 < operationalShifts.length; i++) {
-      const prev = operationalShifts[i]
-      const next = operationalShifts[i + 1]
-      const prevDuration = hoursGap(prev.start_datetime, prev.end_datetime)
-      const minRest = prevDuration * 2   // 1:2 ratio
+    for (let i = 0; i + 1 < nonRestShifts.length; i++) {
+      const prev = nonRestShifts[i]
+      const next = nonRestShifts[i + 1]
+      if (!isOperationalType(next)) continue  // 1:2 only applies before operational missions
+      const nextDuration = hoursGap(next.start_datetime, next.end_datetime)
+      const minRest = nextDuration * 2        // need 2× the upcoming mission's duration as rest
       const gap = hoursGap(prev.end_datetime, next.start_datetime)
       if (gap >= 0 && gap < minRest) {
         errors.push({
@@ -152,7 +171,7 @@ export function validateSchedule(
           severity: 3,
           soldier_id,
           task_id: next.id,
-          message: `${soldierMap[soldier_id]?.full_name ?? soldier_id}: רק ${gap.toFixed(0)}ש׳ מנוחה בין ${prev.task_name} ל-${next.task_name} (נדרש ${minRest.toFixed(0)}ש׳ — יחס 1:2)`,
+          message: `${soldierMap[soldier_id]?.full_name ?? soldier_id}: רק ${gap.toFixed(0)}ש׳ מנוחה לפני ${next.task_name} (נדרש ${minRest.toFixed(0)}ש׳ — יחס 1:2)`,
         })
       }
     }
