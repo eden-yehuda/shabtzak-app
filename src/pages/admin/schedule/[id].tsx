@@ -119,10 +119,12 @@ export default function EditSchedule() {
   const [validationBump, setValidationBump] = useState(0)
   useEffect(() => {
     if (!scheduleId) return
-    const errors = validateSchedule(tasks, assignments, soldiers, finalLeave, schedule?.home_leave_hour ?? schedule?.day_start_hour ?? 0)
+    // home_leave_hour: the swap hour (e.g. 14 = 14:00). Pass 0 if not configured — validation
+    // will skip the leavingToday/returningToday checks when no swap hour is set.
+    const errors = validateSchedule(tasks, assignments, soldiers, finalLeave, schedule?.home_leave_hour ?? 0)
     setValidationErrors(errors)
     setLlmChecked(false)
-  }, [tasks, assignments, soldiers, finalLeave, scheduleId, validationBump, schedule?.home_leave_hour, schedule?.day_start_hour])
+  }, [tasks, assignments, soldiers, finalLeave, scheduleId, validationBump, schedule?.home_leave_hour])
 
   // Dismissed-error keys live on the schedule document (per-schedule state, persisted).
   const dismissedKeys = schedule?.dismissed_validation_errors ?? []
