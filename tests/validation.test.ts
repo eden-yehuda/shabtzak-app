@@ -27,6 +27,14 @@ const makeSoldier = (id: string, overrides: Partial<Soldier> = {}): Soldier => (
 
 const noLeave: LeaveRequest[] = []
 
+const makeLeave = (soldierId: string, date: string): LeaveRequest => ({
+  id: `leave-${soldierId}-${date}`,
+  soldier_id: soldierId,
+  date,
+  status: 'approved',
+  is_final: true,
+})
+
 describe('validateSchedule', () => {
   it('flags double booking when soldier has overlapping tasks', () => {
     const tasks: Task[] = [
@@ -142,6 +150,60 @@ describe('validateSchedule', () => {
     const sorted = [...severities].sort((a, b) => a - b)
     expect(severities).toEqual(sorted)
     expect(severities[0]).toBe(1) // most severe first
+  })
+
+  // ─── Home-time validation (homeLeaveHour-aware) ───────────────────────────
+  describe('home-time checks with homeLeaveHour=14', () => {
+    const HOME_HOUR = 14
+
+    it('stayingHome: flags task on a full home day (both today and yesterday in leave)', () => {
+      const tasks: Task[] = [makeTask('t1', '2026-05-06T16:00', '2026-05-06T20:00')] // after swap
+      const assignments: Assignment[] = [{ id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 }]
+      const leave = [
+        makeLeave('s1', '2026-05-05'), // yesterday home
+        makeLeave('s1', '2026-05-06'), // today home → stayingHome
+      ]
+      const errors = validateSchedule(tasks, assignments, [makeSoldier('s1')], leave, HOME_HOUR)
+      expect(errors.some(e => e.soldier_id === 's1' && e.message.includes('בבית'))).toBe(true)
+    })
+
+    it('leavingToday: flags task that ends AFTER homeLeaveHour', () => {
+      // Soldier's first home day → leaves at 14:00
+      const tasks: Task[] = [makeTask('t1', '2026-05-06T12:00', '2026-05-06T18:00')] // ends 18:00 > 14
+      const assignments: Assignment[] = [{ id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 }]
+      const leave = [makeLeave('s1', '2026-05-06')] // only today → leavingToday
+      const errors = validateSchedule(tasks, assignments, [makeSoldier('s1')], leave, HOME_HOUR)
+      expect(errors.some(e => e.soldier_id === 's1' && e.message.includes('בבית'))).toBe(true)
+    })
+
+    it('leavingToday: does NOT flag task that ends at or before homeLeaveHour', () => {
+      // Task from 08:00 to 14:00 — soldier still at base (leaves at 14:00)
+      const tasks: Task[] = [makeTask('t1', '2026-05-06T08:00', '2026-05-06T14:00')]
+      const assignments: Assignment[] = [{ id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 }]
+      const leave = [makeLeave('s1', '2026-05-06')]
+      const errors = validateSchedule(tasks, assignments, [makeSoldier('s1')], leave, HOME_HOUR)
+      const homeErrors = errors.filter(e => e.soldier_id === 's1' && e.message.includes('בבית'))
+      expect(homeErrors).toHaveLength(0)
+    })
+
+    it('returningToday: flags task that starts BEFORE homeLeaveHour', () => {
+      // Yesterday in homeDates, today not → returning today at 14:00
+      const tasks: Task[] = [makeTask('t1', '2026-05-07T08:00', '2026-05-07T12:00')] // starts 08:00 < 14
+      const assignments: Assignment[] = [{ id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 }]
+      const leave = [makeLeave('s1', '2026-05-06')] // yesterday home, today not → returningToday
+      const errors = validateSchedule(tasks, assignments, [makeSoldier('s1')], leave, HOME_HOUR)
+      expect(errors.some(e => e.soldier_id === 's1' && e.message.includes('בבית'))).toBe(true)
+    })
+
+    it('returningToday: does NOT flag task that starts at or after homeLeaveHour', () => {
+      // Task starts at 14:00 — soldier has returned
+      const tasks: Task[] = [makeTask('t1', '2026-05-07T14:00', '2026-05-07T22:00')]
+      const assignments: Assignment[] = [{ id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 }]
+      const leave = [makeLeave('s1', '2026-05-06')] // yesterday home → returningToday today
+      const errors = validateSchedule(tasks, assignments, [makeSoldier('s1')], leave, HOME_HOUR)
+      const homeErrors = errors.filter(e => e.soldier_id === 's1' && e.message.includes('בבית'))
+      expect(homeErrors).toHaveLength(0)
+    })
   })
 
   it('returns no errors for a valid schedule', () => {
