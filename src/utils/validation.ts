@@ -17,11 +17,18 @@ export function isAllowedConcurrent(typeA: string, typeB: string): boolean {
   )
 }
 
+function prevDateStr(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00')
+  d.setDate(d.getDate() - 1)
+  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
+}
+
 export function validateSchedule(
   tasks: Task[],
   assignments: Assignment[],
   soldiers: Soldier[],
-  finalLeave: LeaveRequest[]
+  finalLeave: LeaveRequest[],
+  homeLeaveHour = 0
 ): ValidationError[] {
   const errors: ValidationError[] = []
   const soldierMap: Record<string, Soldier> = {}
@@ -58,11 +65,34 @@ export function validateSchedule(
   }
 
   // ─── 1. Assignment during home time ─────────────────────────────────
+  // Mirrors SoldierPanel logic (getSoldierStatus + canAssignByLeaveStatus):
+  //   stayingHome  (isHome && wasHome)  → fully away all day → always error
+  //   leavingToday (isHome && !wasHome) → at base until homeLeaveHour → error if task ends after swap
+  //   returningToday (!isHome && wasHome) → away until homeLeaveHour → error if task starts before swap
   for (const a of assignments) {
     const task = tasks.find(t => t.id === a.task_id)
     if (!task) continue
-    const taskDate = task.start_datetime.toISOString().split('T')[0]
-    if (homeDates[a.soldier_id]?.has(taskDate)) {
+
+    const taskDateStr = task.start_datetime.toISOString().split('T')[0]
+    const yestStr     = prevDateStr(taskDateStr)
+    const isHomeOnDate = homeDates[a.soldier_id]?.has(taskDateStr) ?? false
+    const wasHomeYest  = homeDates[a.soldier_id]?.has(yestStr)    ?? false
+
+    let homeError = false
+    if (isHomeOnDate && wasHomeYest) {
+      // stayingHome — never assignable
+      homeError = true
+    } else if (isHomeOnDate && !wasHomeYest) {
+      // leavingToday — error if task extends past homeLeaveHour
+      const taskEndDate = task.end_datetime.toISOString().split('T')[0]
+      const taskEndH    = task.end_datetime.getHours()
+      if (taskEndDate !== taskDateStr || taskEndH > homeLeaveHour) homeError = true
+    } else if (!isHomeOnDate && wasHomeYest) {
+      // returningToday — error if task starts before homeLeaveHour
+      if (task.start_datetime.getHours() < homeLeaveHour) homeError = true
+    }
+
+    if (homeError) {
       const soldier = soldierMap[a.soldier_id]
       errors.push({
         type: 'error',
