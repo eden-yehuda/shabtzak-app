@@ -301,12 +301,16 @@ export default function ScheduleGrid({
     return { days: sortedDays, allColumns: cols }
   }, [tasks, assignments, finalLeave, myTasksOnly, currentSoldierId, builderMode, showAllDays, columnOrder, minDate])
 
-  // Display name per column: task_name of the first task with that task_type.
-  // Falls back to the task_type string if no tasks exist yet for a type.
+  // Display name per column: prefer a task_name that differs from task_type (customised),
+  // fall back to task_type when all tasks in the column use the default name.
   const colDisplayName = useMemo(() => {
     const map: Record<string, string> = {}
     for (const t of tasks) {
-      if (!map[t.task_type]) map[t.task_type] = t.task_name
+      const existing = map[t.task_type]
+      // First encounter, or current best is still the default (= type name) and this one is custom
+      if (!existing || (existing === t.task_type && t.task_name !== t.task_type)) {
+        map[t.task_type] = t.task_name
+      }
     }
     return map
   }, [tasks])

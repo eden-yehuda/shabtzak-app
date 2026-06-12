@@ -51,10 +51,10 @@ describe('validateSchedule', () => {
     expect(errors.some(e => e.type === 'error' && e.soldier_id === 's1')).toBe(true)
   })
 
-  it('flags insufficient rest (< 16 hours between tasks)', () => {
+  it('flags insufficient rest (4h mission needs 8h rest, only 4h given)', () => {
     const tasks: Task[] = [
-      makeTask('t1', '2026-04-27T00:00', '2026-04-27T04:00'),
-      makeTask('t2', '2026-04-27T08:00', '2026-04-27T12:00'),
+      makeTask('t1', '2026-04-27T00:00', '2026-04-27T04:00'),  // 4h mission
+      makeTask('t2', '2026-04-27T08:00', '2026-04-27T12:00'),  // only 4h rest → need 8h (1:2)
     ]
     const assignments: Assignment[] = [
       { id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 },
@@ -76,10 +76,10 @@ describe('validateSchedule', () => {
     expect(errors.some(e => e.type === 'error' && e.task_id === 't1')).toBe(true)
   })
 
-  it('flags workload imbalance when gap exceeds 8 hours', () => {
+  it('flags workload imbalance when gap exceeds 12 hours', () => {
     const tasks: Task[] = [
       makeTask('t1', '2026-04-27T08:00', '2026-04-27T22:00'), // 14h
-      makeTask('t2', '2026-04-27T08:00', '2026-04-27T10:00'), // 2h
+      makeTask('t2', '2026-04-27T08:00', '2026-04-27T09:00'), // 1h
     ]
     const assignments: Assignment[] = [
       { id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 },
@@ -204,6 +204,76 @@ describe('validateSchedule', () => {
       const errors = validateSchedule(tasks, assignments, [makeSoldier('s1')], leave, HOME_HOUR)
       const homeErrors = errors.filter(e => e.soldier_id === 's1' && e.message.includes('בבית'))
       expect(homeErrors).toHaveLength(0)
+    })
+  })
+
+  // ─── 1:2 rest ratio for operational missions ─────────────────────────────
+  describe('operational mission 1:2 rest ratio', () => {
+    it('flags 8h mission followed by only 8h rest before next mission (needs 16h)', () => {
+      const tasks: Task[] = [
+        makeTask('t1', '2026-04-27T00:00', '2026-04-27T08:00'), // 8h mission
+        makeTask('t2', '2026-04-27T16:00', '2026-04-28T00:00'), // only 8h rest → need 16h
+      ]
+      const assignments: Assignment[] = [
+        { id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 },
+        { id: 'a2', task_id: 't2', soldier_id: 's1', order: 0 },
+      ]
+      const errors = validateSchedule(tasks, assignments, [makeSoldier('s1')], noLeave)
+      expect(errors.some(e => e.soldier_id === 's1' && e.message.includes('מנוחה'))).toBe(true)
+    })
+
+    it('does NOT flag 8h mission with exactly 16h rest before next mission', () => {
+      const tasks: Task[] = [
+        makeTask('t1', '2026-04-27T00:00', '2026-04-27T08:00'), // 8h mission
+        makeTask('t2', '2026-04-28T00:00', '2026-04-28T08:00'), // exactly 16h rest ✓
+      ]
+      const assignments: Assignment[] = [
+        { id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 },
+        { id: 'a2', task_id: 't2', soldier_id: 's1', order: 0 },
+      ]
+      const errors = validateSchedule(tasks, assignments, [makeSoldier('s1')], noLeave)
+      expect(errors.filter(e => e.soldier_id === 's1' && e.message.includes('מנוחה'))).toHaveLength(0)
+    })
+
+    it('does NOT flag operational mission followed by כוננות (כוננות = rest, not an operational shift)', () => {
+      const kTask: Task = {
+        id: 'tk', schedule_id: 'sched1', task_name: 'כוננות', task_type: 'כוננות',
+        difficulty: 'medium', start_datetime: new Date('2026-04-27T08:00'),
+        end_datetime: new Date('2026-04-27T20:00'), required_people_count: 1, requires_commander: false,
+      }
+      const tasks: Task[] = [
+        makeTask('t1', '2026-04-27T00:00', '2026-04-27T08:00'), // 8h mission
+        kTask,  // כוננות right after — should NOT flag rest error
+      ]
+      const assignments: Assignment[] = [
+        { id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 },
+        { id: 'ak', task_id: 'tk', soldier_id: 's1', order: 0 },
+      ]
+      const errors = validateSchedule(tasks, assignments, [makeSoldier('s1')], noLeave)
+      expect(errors.filter(e => e.soldier_id === 's1' && e.message.includes('מנוחה'))).toHaveLength(0)
+    })
+
+    it('flags operational mission after כוננות if gap to NEXT operational is too short', () => {
+      // Mission(0-8h) → כוננות(8-16h) → Mission(16-24h)
+      // Gap between the two missions = 8h; required = 2×8 = 16h → ERROR
+      const kTask: Task = {
+        id: 'tk', schedule_id: 'sched1', task_name: 'כוננות א', task_type: 'כוננות א',
+        difficulty: 'medium', start_datetime: new Date('2026-04-27T08:00'),
+        end_datetime: new Date('2026-04-27T16:00'), required_people_count: 1, requires_commander: false,
+      }
+      const tasks: Task[] = [
+        makeTask('t1', '2026-04-27T00:00', '2026-04-27T08:00'), // 8h mission
+        kTask,                                                    // 8h כוננות (rest)
+        makeTask('t2', '2026-04-27T16:00', '2026-04-28T00:00'), // next 8h mission
+      ]
+      const assignments: Assignment[] = [
+        { id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 },
+        { id: 'ak', task_id: 'tk', soldier_id: 's1', order: 0 },
+        { id: 'a2', task_id: 't2', soldier_id: 's1', order: 0 },
+      ]
+      const errors = validateSchedule(tasks, assignments, [makeSoldier('s1')], noLeave)
+      // Only 8h between operational missions (כוננות is rest, doesn't add to gap)
+      expect(errors.some(e => e.soldier_id === 's1' && e.message.includes('מנוחה'))).toBe(true)
     })
   })
 

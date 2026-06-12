@@ -573,38 +573,65 @@ export default function EditSchedule() {
   async function handleEditColumn(taskType: string, params: EditColumnParams) {
     if (!scheduleId) return
     const colTasks = tasks.filter(t => t.task_type === taskType)
-    // Collect unique days that had tasks in this column
-    const daySet = new Set(colTasks.map(t => {
-      const d = t.start_datetime
-      return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
-    }))
+
+    // Collect unique days
+    const dayKey = (d: Date) =>
+      [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
+    const daySet = new Set(colTasks.map(t => dayKey(t.start_datetime)))
     const days = Array.from(daySet).sort()
-    // Delete existing tasks and their assignments
-    const batch = writeBatch(db)
-    for (const task of colTasks) {
-      const aSnap = await getDocs(query(collection(db, 'assignments'), where('task_id', '==', task.id)))
-      aSnap.docs.forEach(a => batch.delete(a.ref))
-      batch.delete(doc(db, 'tasks', task.id))
-    }
-    await batch.commit()
-    // Recreate with new params
+
     for (const dayStr of days) {
+      // Existing tasks for this day sorted by start time
+      const dayTasks = colTasks
+        .filter(t => dayKey(t.start_datetime) === dayStr)
+        .sort((a, b) => a.start_datetime.getTime() - b.start_datetime.getTime())
+
+      // New time slots
+      const newSlots: Array<{ start: Date; end: Date }> = []
       for (let i = 0; i < params.timesPerDay; i++) {
         const startMs = new Date(`${dayStr}T${String(params.startHour).padStart(2, '0')}:00`).getTime()
           + i * params.durationHours * 3600000
-        const start = new Date(startMs)
-        const end = new Date(startMs + params.durationHours * 3600000)
-        await addDoc(collection(db, 'tasks'), {
-          schedule_id: scheduleId,
-          task_name: params.taskName, task_type: taskType,
-          start_datetime: Timestamp.fromDate(start),
-          end_datetime: Timestamp.fromDate(end),
-          requires_commander: params.requiresCommander,
+        newSlots.push({ start: new Date(startMs), end: new Date(startMs + params.durationHours * 3600000) })
+      }
+
+      // Update existing tasks in-place → assignments are preserved
+      const updateCount = Math.min(dayTasks.length, newSlots.length)
+      for (let i = 0; i < updateCount; i++) {
+        await updateDoc(doc(db, 'tasks', dayTasks[i].id), {
+          task_name:             params.taskName,
+          start_datetime:        Timestamp.fromDate(newSlots[i].start),
+          end_datetime:          Timestamp.fromDate(newSlots[i].end),
+          requires_commander:    params.requiresCommander,
           required_people_count: params.soldiersRequired,
-          difficulty: 'hard', notes: '',
         })
       }
+
+      // Create extra tasks if timesPerDay increased
+      for (let i = dayTasks.length; i < newSlots.length; i++) {
+        await addDoc(collection(db, 'tasks'), {
+          schedule_id:           scheduleId,
+          task_name:             params.taskName,
+          task_type:             taskType,
+          start_datetime:        Timestamp.fromDate(newSlots[i].start),
+          end_datetime:          Timestamp.fromDate(newSlots[i].end),
+          requires_commander:    params.requiresCommander,
+          required_people_count: params.soldiersRequired,
+          difficulty:            'hard',
+          notes:                 '',
+        })
+      }
+
+      // Delete surplus tasks if timesPerDay decreased (along with their assignments)
+      for (let i = newSlots.length; i < dayTasks.length; i++) {
+        const surplus = dayTasks[i]
+        const aSnap = await getDocs(query(collection(db, 'assignments'), where('task_id', '==', surplus.id)))
+        const b = writeBatch(db)
+        aSnap.docs.forEach(a => b.delete(a.ref))
+        b.delete(doc(db, 'tasks', surplus.id))
+        await b.commit()
+      }
     }
+
     await touchSchedule()
     setEditingColumn(null)
   }
