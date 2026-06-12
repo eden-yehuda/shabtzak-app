@@ -51,7 +51,7 @@ describe('validateSchedule', () => {
     expect(errors.some(e => e.type === 'error' && e.soldier_id === 's1')).toBe(true)
   })
 
-  it('flags insufficient rest (< 16 hours between tasks)', () => {
+  it('flags insufficient rest (< 8 hours between tasks)', () => {
     const tasks: Task[] = [
       makeTask('t1', '2026-04-27T00:00', '2026-04-27T04:00'),
       makeTask('t2', '2026-04-27T08:00', '2026-04-27T12:00'),
@@ -76,10 +76,10 @@ describe('validateSchedule', () => {
     expect(errors.some(e => e.type === 'error' && e.task_id === 't1')).toBe(true)
   })
 
-  it('flags workload imbalance when gap exceeds 8 hours', () => {
+  it('flags workload imbalance when gap exceeds 12 hours', () => {
     const tasks: Task[] = [
       makeTask('t1', '2026-04-27T08:00', '2026-04-27T22:00'), // 14h
-      makeTask('t2', '2026-04-27T08:00', '2026-04-27T10:00'), // 2h
+      makeTask('t2', '2026-04-27T08:00', '2026-04-27T09:00'), // 1h
     ]
     const assignments: Assignment[] = [
       { id: 'a1', task_id: 't1', soldier_id: 's1', order: 0 },
