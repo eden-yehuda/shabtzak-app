@@ -24,6 +24,7 @@ export interface Schedule {
   home_leave_hour?: number  // hour when soldiers swap (depart/return); defaults to day_start_hour
   dismissed_validation_errors?: string[]  // stable keys of errors the user has manually marked as OK
   column_order?: string[]               // persisted column order set by admin
+  is_archived?: boolean                 // soft-delete: archived schedules are hidden from the main list
 }
 
 export interface TaskType {
