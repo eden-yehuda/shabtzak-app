@@ -1,11 +1,12 @@
 import AdminLayout from '@/components/layout/AdminLayout'
 import { useLeaveCountByDate } from '@/hooks/useLeaveRequests'
 import { useSoldiers } from '@/hooks/useSoldiers'
-import { useSchedules } from '@/hooks/useSchedules'
+import { useSchedules, useArchivedSchedules } from '@/hooks/useSchedules'
 import { useUnreadInquiriesCount } from '@/hooks/useUnreadInquiries'
 import Link from 'next/link'
-import { deleteDoc, doc, getDocs, query, where, collection } from 'firebase/firestore'
+import { updateDoc, doc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { useState } from 'react'
 
 function isoDate(d: Date) {
   return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
@@ -15,25 +16,29 @@ export default function AdminDashboard() {
   const soldiers = useSoldiers()
   const leaveCountByDate = useLeaveCountByDate()
   const schedules = useSchedules()
+  const archivedSchedules = useArchivedSchedules()
   const unreadInquiries = useUnreadInquiriesCount()
+  const [showArchived, setShowArchived] = useState(false)
 
   const today = new Date().toISOString().slice(0, 10)
   const todayCount = leaveCountByDate[today] || 0
   const available = soldiers.length - todayCount
 
-  async function deleteSchedule(id: string, name: string) {
-    if (!window.confirm(`למחוק את "${name}"? פעולה זו תמחק גם את כל המשימות והשיבוצים שלו.`)) return
+  async function archiveSchedule(id: string, name: string) {
+    if (!window.confirm(`להעביר את "${name}" לארכיון? ניתן לשחזר מאוחר יותר.`)) return
     try {
-      // Delete tasks and their assignments
-      const tasksSnap = await getDocs(query(collection(db, 'tasks'), where('schedule_id', '==', id)))
-      for (const t of tasksSnap.docs) {
-        const assignSnap = await getDocs(query(collection(db, 'assignments'), where('task_id', '==', t.id)))
-        for (const a of assignSnap.docs) await deleteDoc(doc(db, 'assignments', a.id))
-        await deleteDoc(doc(db, 'tasks', t.id))
-      }
-      await deleteDoc(doc(db, 'schedules', id))
+      await updateDoc(doc(db, 'schedules', id), { is_archived: true })
     } catch (e) {
-      alert('שגיאה במחיקה: ' + String(e))
+      alert('שגיאה בהעברה לארכיון: ' + String(e))
+    }
+  }
+
+  async function restoreSchedule(id: string, name: string) {
+    if (!window.confirm(`לשחזר את "${name}" מהארכיון?`)) return
+    try {
+      await updateDoc(doc(db, 'schedules', id), { is_archived: false })
+    } catch (e) {
+      alert('שגיאה בשחזור: ' + String(e))
     }
   }
 
@@ -88,7 +93,7 @@ export default function AdminDashboard() {
         </Link>
       </div>
 
-      {/* Schedules list */}
+      {/* Active Schedules list */}
       <div>
         <h2 className="text-base font-bold text-slate-700 mb-3" dir="rtl">שבצ&quot;קים</h2>
         {schedules.length === 0 ? (
@@ -113,11 +118,11 @@ export default function AdminDashboard() {
                     <span className="text-navy text-sm">✏️</span>
                   </Link>
                   <button
-                    onClick={() => deleteSchedule(s.id, s.name)}
-                    className="text-red-400 hover:text-red-600 text-sm transition"
-                    title="מחק שבצ&quot;ק"
+                    onClick={() => archiveSchedule(s.id, s.name)}
+                    className="text-slate-400 hover:text-slate-600 text-sm transition"
+                    title="העבר לארכיון"
                   >
-                    🗑
+                    📦
                   </button>
                 </div>
               </div>
@@ -125,6 +130,41 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {/* Archived Schedules */}
+      {archivedSchedules.length > 0 && (
+        <div className="mt-8">
+          <button
+            onClick={() => setShowArchived(v => !v)}
+            className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"
+            dir="rtl"
+          >
+            <span>{showArchived ? '▾' : '▸'}</span>
+            <span>ארכיון ({archivedSchedules.length})</span>
+          </button>
+          {showArchived && (
+            <div className="space-y-2 mt-2" dir="rtl">
+              {archivedSchedules.map(s => (
+                <div key={s.id} className="bg-slate-50 rounded-xl px-5 py-3.5 border border-slate-200 flex justify-between items-center opacity-70">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-slate-500 text-sm">{s.name}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">
+                      {isoDate(s.start_datetime)} – {isoDate(s.end_datetime)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => restoreSchedule(s.id, s.name)}
+                    className="text-slate-400 hover:text-navy text-xs transition"
+                    title="שחזר מארכיון"
+                  >
+                    ↩ שחזר
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </AdminLayout>
   )
 }

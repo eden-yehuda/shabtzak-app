@@ -24,13 +24,36 @@ function rawToSchedule(id: string, data: Record<string, unknown>): Schedule {
   } as Schedule
 }
 
+// Active schedules only (is_archived !== true)
 export function useSchedules(): Schedule[] {
   const [schedules, setSchedules] = useState<Schedule[]>([])
 
   useEffect(() => {
     const q = query(schedulesRef(), orderBy('start_datetime', 'desc'))
     return onSnapshot(q, snap => {
-      setSchedules(snap.docs.map(d => rawToSchedule(d.id, d.data())))
+      setSchedules(
+        snap.docs
+          .map(d => rawToSchedule(d.id, d.data()))
+          .filter(s => !s.is_archived)
+      )
+    })
+  }, [])
+
+  return schedules
+}
+
+// Archived schedules only (is_archived === true)
+export function useArchivedSchedules(): Schedule[] {
+  const [schedules, setSchedules] = useState<Schedule[]>([])
+
+  useEffect(() => {
+    const q = query(schedulesRef(), orderBy('start_datetime', 'desc'))
+    return onSnapshot(q, snap => {
+      setSchedules(
+        snap.docs
+          .map(d => rawToSchedule(d.id, d.data()))
+          .filter(s => s.is_archived === true)
+      )
     })
   }, [])
 
