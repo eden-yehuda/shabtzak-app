@@ -5,8 +5,16 @@ import { useRouter } from 'next/router'
 import { auth } from '@/lib/firebase'
 import { useSoldiers } from '@/hooks/useSoldiers'
 import { useAllSchedulesTotals } from '@/hooks/useAllSchedulesTotals'
+import { useFinalLeave } from '@/hooks/useFinalLeave'
 import { taskDurationHours } from '@/utils/dateUtils'
-import type { Soldier, Task, Assignment } from '@/types'
+import type { Soldier, Task, Assignment, LeaveRequest } from '@/types'
+
+// Soldiers who shared a single position in a split (פיצול) — each was present ~50% of
+// the time, so comparing their home-days / hours head-to-head with full-time soldiers is
+// misleading. We exclude them from superlative comparison questions.
+function isSplitSoldier(name: string): boolean {
+  return name.includes('ברמה') || name.includes('עמיחי')
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Aggregated per-soldier stats across the whole "קו" (all schedules)
@@ -41,6 +49,49 @@ function buildStats(soldiers: Soldier[], tasks: Task[], assignments: Assignment[
     .filter(s => s.total > 0)
     .map(s => ({ ...s, total: Math.round(s.total) }))
     .sort((a, b) => b.total - a.total)
+}
+
+// Home days per soldier: approved final-leave dates + fixed home ranges (mirrors validation.ts)
+function buildHomeDays(soldiers: Soldier[], finalLeave: LeaveRequest[]): Record<string, number> {
+  const sets: Record<string, Set<string>> = {}
+  const add = (id: string, d: string) => { (sets[id] ??= new Set()).add(d) }
+  for (const r of finalLeave) {
+    if (r.status === 'approved') add(r.soldier_id, r.date)
+  }
+  for (const s of soldiers) {
+    for (const range of s.fixed_home_ranges ?? []) {
+      if (!range.from || !range.to) continue
+      const cur = new Date(range.from)
+      const to = new Date(range.to)
+      while (cur <= to) { add(s.id, cur.toISOString().split('T')[0]); cur.setDate(cur.getDate() + 1) }
+    }
+  }
+  const out: Record<string, number> = {}
+  for (const [id, set] of Object.entries(sets)) out[id] = set.size
+  return out
+}
+
+// Co-occurrence: how many shifts each pair of soldiers shared. Returns, per soldier,
+// the list of partners sorted by most shared shifts first.
+function buildPartners(assignments: Assignment[]): Record<string, Array<{ id: string; count: number }>> {
+  const byTask: Record<string, string[]> = {}
+  for (const a of assignments) (byTask[a.task_id] ??= []).push(a.soldier_id)
+  const pair: Record<string, Record<string, number>> = {}
+  for (const ids of Object.values(byTask)) {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const x = ids[i], y = ids[j]
+        if (x === y) continue
+        ;(pair[x] ??= {})[y] = (pair[x][y] ?? 0) + 1
+        ;(pair[y] ??= {})[x] = (pair[y][x] ?? 0) + 1
+      }
+    }
+  }
+  const out: Record<string, Array<{ id: string; count: number }>> = {}
+  for (const [id, m] of Object.entries(pair)) {
+    out[id] = Object.entries(m).map(([pid, c]) => ({ id: pid, count: c })).sort((a, b) => b.count - a.count)
+  }
+  return out
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,6 +192,12 @@ function makeWhoQuestion(q: string, emoji: string, correctName: string, allNames
   return { q, emoji, options, correct: options.indexOf(correctName) }
 }
 
+// Binary "A or B" comparison — the flavor the user asked for ("מי היה יותר X")
+function makeBinaryQuestion(q: string, emoji: string, aName: string, bName: string, correctName: string): Question {
+  const options = shuffle([aName, bName])
+  return { q, emoji, options, correct: options.indexOf(correctName) }
+}
+
 function makeNumberQuestion(q: string, emoji: string, answer: number): Question {
   const variants = new Set<number>([answer])
   const offsets = [0.7, 0.85, 1.18, 1.35, 1.6]
@@ -157,47 +214,96 @@ function makeNumberQuestion(q: string, emoji: string, answer: number): Question 
   return { q, emoji, options, correct: options.indexOf(`${answer} שעות`) }
 }
 
-function buildQuiz(stats: SoldierStat[]): Question[] {
+interface QuizExtras {
+  homeDays: Record<string, number>
+  partners: Record<string, Array<{ id: string; count: number }>>
+  nameById: Record<string, string>
+}
+
+const QUIZ_LENGTH = 8
+
+function buildQuiz(stats: SoldierStat[], extras: QuizExtras): Question[] {
   const allNames = stats.map(s => s.name)
   if (stats.length < 4) return []
+  const { homeDays, partners, nameById } = extras
 
-  const out: Question[] = []
-  const push = (qq: Question | null) => { if (qq) out.push(qq) }
+  // Buckets keep categories separated so we can guarantee variety in the final mix.
+  const typeQs: Question[] = []
+  const homeQs: Question[] = []
+  const partnerQs: Question[] = []
+  const classicQs: Question[] = []
 
-  // 1. Top contributor overall
-  push(makeWhoQuestion('מי צבר הכי הרבה שעות משימה בקו? 👑', '👑', stats[0].name, allNames))
-
-  // 2. Total team hours
-  const totalTeam = stats.reduce((s, x) => s + x.total, 0)
-  push(makeNumberQuestion('כמה שעות משימה צבר הצוות כולו בקו?', '⏱️', Math.round(totalTeam / 5) * 5))
-
-  // 3. Top performer's personal total
-  push(makeNumberQuestion(`כמה שעות בסך הכל צבר ${stats[0].name}?`, '🔥', stats[0].total))
-
-  // 4. Top task types — who did most of each
+  // ── Task-type questions (superlative + binary "A or B") ──
   const typeTotals: Record<string, number> = {}
   for (const s of stats) for (const [t, h] of Object.entries(s.byType)) typeTotals[t] = (typeTotals[t] ?? 0) + h
   const topTypes = Object.entries(typeTotals).sort((a, b) => b[1] - a[1]).map(([t]) => t)
-  for (const type of topTypes.slice(0, 3)) {
-    const leader = [...stats].sort((a, b) => (b.byType[type] ?? 0) - (a.byType[type] ?? 0))[0]
-    if (leader && (leader.byType[type] ?? 0) > 0) {
-      push(makeWhoQuestion(`מי עשה הכי הרבה שעות "${type}"?`, '🎯', leader.name, allNames))
+  for (const type of topTypes.slice(0, 6)) {
+    const ranked = [...stats].filter(s => (s.byType[type] ?? 0) > 0).sort((a, b) => (b.byType[type] ?? 0) - (a.byType[type] ?? 0))
+    if (ranked.length >= 1) {
+      const sup = makeWhoQuestion(`מי עשה הכי הרבה שעות "${type}"?`, '🎯', ranked[0].name, allNames)
+      if (sup) typeQs.push(sup)
     }
-    if (out.length >= 6) break
+    if (ranked.length >= 2 && (ranked[0].byType[type] ?? 0) !== (ranked[1].byType[type] ?? 0)) {
+      typeQs.push(makeBinaryQuestion(`מי עשה יותר "${type}"?`, '⚔️', ranked[0].name, ranked[1].name, ranked[0].name))
+    }
   }
 
-  // 5. Lowest among those who worked
-  if (out.length < 6) {
-    push(makeWhoQuestion('מי צבר הכי מעט שעות (מבין הפעילים)? 😴', '😴', stats[stats.length - 1].name, allNames))
+  // ── Home days (excluding split-position soldiers — they were ~50% by design) ──
+  const homeRanked = stats
+    .filter(s => !isSplitSoldier(s.name) && (homeDays[s.id] ?? 0) > 0)
+    .sort((a, b) => (homeDays[b.id] ?? 0) - (homeDays[a.id] ?? 0))
+  const nonSplitNames = stats.filter(s => !isSplitSoldier(s.name)).map(s => s.name)
+  if (homeRanked.length >= 4) {
+    const sup = makeWhoQuestion('מי היה הכי הרבה ימים בבית? 🏠', '🏠', homeRanked[0].name, nonSplitNames)
+    if (sup) homeQs.push(sup)
+    // binary between two clearly-different soldiers
+    const a = homeRanked[0], b = homeRanked[Math.min(3, homeRanked.length - 1)]
+    if ((homeDays[a.id] ?? 0) !== (homeDays[b.id] ?? 0)) {
+      homeQs.push(makeBinaryQuestion('מי היה יותר ימים בבית?', '🏠', a.name, b.name, a.name))
+    }
   }
 
-  // 6. Most shifts
-  if (out.length < 6) {
-    const mostShifts = [...stats].sort((a, b) => b.shifts - a.shifts)[0]
-    push(makeWhoQuestion('מי שובץ למספר המשמרות הגדול ביותר?', '📋', mostShifts.name, allNames))
+  // ── "מי היה הכי הרבה עם מי" — co-occurrence partners ──
+  const wellConnected = stats.filter(s => {
+    const p = partners[s.id]
+    return p && p.length >= 1 && p[0].count > 0 && (p.length < 2 || p[0].count > p[1].count)
+  })
+  for (const s of shuffle(wellConnected).slice(0, 4)) {
+    const top = partners[s.id][0]
+    const topName = nameById[top.id]
+    if (!topName) continue
+    const pool = allNames.filter(n => n !== s.name)
+    const q = makeWhoQuestion(`עם מי ${s.name} חלק את הכי הרבה משמרות משותפות? 🤝`, '🤝', topName, pool)
+    if (q) partnerQs.push(q)
   }
 
-  return out.slice(0, 6)
+  // ── Classic questions ──
+  const c1 = makeWhoQuestion('מי צבר הכי הרבה שעות משימה בקו? 👑', '👑', stats[0].name, allNames)
+  if (c1) classicQs.push(c1)
+  const totalTeam = stats.reduce((s, x) => s + x.total, 0)
+  classicQs.push(makeNumberQuestion('כמה שעות משימה צבר הצוות כולו בקו?', '⏱️', Math.round(totalTeam / 5) * 5))
+  classicQs.push(makeNumberQuestion(`כמה שעות בסך הכל צבר ${stats[0].name}?`, '🔥', stats[0].total))
+  const mostShifts = [...stats].sort((a, b) => b.shifts - a.shifts)[0]
+  const cShifts = makeWhoQuestion('מי שובץ למספר המשמרות הגדול ביותר?', '📋', mostShifts.name, allNames)
+  if (cShifts) classicQs.push(cShifts)
+  const lowest = [...stats].filter(s => !isSplitSoldier(s.name)).pop()
+  if (lowest) {
+    const cLow = makeWhoQuestion('מי צבר הכי מעט שעות (מבין המלאים)? 😴', '😴', lowest.name, allNames)
+    if (cLow) classicQs.push(cLow)
+  }
+
+  // ── Assemble: guarantee the categories the user asked for, then fill ──
+  const final: Question[] = []
+  const take = (arr: Question[], n: number) => final.push(...shuffle(arr).slice(0, n))
+  take(typeQs, 3)      // task types — emphasized
+  take(homeQs, 1)      // home days
+  take(partnerQs, 2)   // who-with-whom
+  take(classicQs, 2)
+  // top up from whatever remains if any bucket was short
+  const leftovers = shuffle([...typeQs, ...homeQs, ...partnerQs, ...classicQs]).filter(q => !final.includes(q))
+  while (final.length < QUIZ_LENGTH && leftovers.length) final.push(leftovers.shift() as Question)
+
+  return shuffle(final).slice(0, QUIZ_LENGTH)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -273,9 +379,15 @@ export default function LeaderboardShow() {
   useEffect(() => onAuthStateChanged(auth, u => { if (!u) router.replace('/admin/login'); else setAuthed(true) }), [router])
 
   const soldiers = useSoldiers(false)
+  const finalLeave = useFinalLeave()
   const { allTasks, allAssignments } = useAllSchedulesTotals()
 
   const stats = useMemo(() => buildStats(soldiers, allTasks, allAssignments), [soldiers, allTasks, allAssignments])
+  const quizExtras = useMemo<QuizExtras>(() => ({
+    homeDays: buildHomeDays(soldiers, finalLeave),
+    partners: buildPartners(allAssignments),
+    nameById: Object.fromEntries(soldiers.map(s => [s.id, s.full_name])),
+  }), [soldiers, finalLeave, allAssignments])
 
   const [stage, setStage] = useState<Stage>('intro')
   const [boardStarted, setBoardStarted] = useState(false)
@@ -296,7 +408,7 @@ export default function LeaderboardShow() {
   }
 
   function goQuiz() {
-    setQuiz(buildQuiz(stats))
+    setQuiz(buildQuiz(stats, quizExtras))
     setQIdx(0); setScore(0); setPicked(null)
     setStage('quiz')
   }
