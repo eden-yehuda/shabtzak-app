@@ -49,6 +49,10 @@ export default function JusticePage() {
       <div className="flex flex-wrap gap-3 items-center mb-4">
         <h1 className="text-xl font-bold text-navy">טבלת צדק</h1>
         <span className="text-xs bg-navy/10 text-navy px-2 py-1 rounded-full font-semibold">מתחילת הקו</span>
+        <a href="/admin/leaderboard"
+          className="mr-auto text-sm font-bold bg-gradient-to-l from-fuchsia-500 to-purple-600 text-white rounded-xl px-4 py-2 shadow hover:scale-105 active:scale-95 transition">
+          🏆 מצב הצגה
+        </a>
       </div>
 
       {/* Tabs */}
