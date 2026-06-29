@@ -23,9 +23,10 @@ interface SoldierStat {
   id: string
   name: string
   isCommander: boolean
-  total: number                     // total hours
-  byType: Record<string, number>    // hours per task type
-  shifts: number                    // number of assigned tasks
+  shifts: number                          // number of assigned shifts (PRIMARY metric)
+  shiftsByType: Record<string, number>    // shift count per task type
+  total: number                           // total hours (secondary)
+  byType: Record<string, number>          // hours per task type
 }
 
 function buildStats(soldiers: Soldier[], tasks: Task[], assignments: Assignment[]): SoldierStat[] {
@@ -33,7 +34,7 @@ function buildStats(soldiers: Soldier[], tasks: Task[], assignments: Assignment[
   const map: Record<string, SoldierStat> = {}
   for (const s of soldiers) {
     if (!s.is_active) continue
-    map[s.id] = { id: s.id, name: s.full_name, isCommander: s.is_commander, total: 0, byType: {}, shifts: 0 }
+    map[s.id] = { id: s.id, name: s.full_name, isCommander: s.is_commander, shifts: 0, shiftsByType: {}, total: 0, byType: {} }
   }
   for (const a of assignments) {
     const t = taskById.get(a.task_id)
@@ -41,14 +42,16 @@ function buildStats(soldiers: Soldier[], tasks: Task[], assignments: Assignment[
     if (!t || !stat) continue
     const h = taskDurationHours(t.start_datetime, t.end_datetime)
     if (h <= 0) continue
+    stat.shifts += 1
+    stat.shiftsByType[t.task_type] = (stat.shiftsByType[t.task_type] ?? 0) + 1
     stat.total += h
     stat.byType[t.task_type] = (stat.byType[t.task_type] ?? 0) + h
-    stat.shifts += 1
   }
   return Object.values(map)
-    .filter(s => s.total > 0)
+    .filter(s => s.shifts > 0)
     .map(s => ({ ...s, total: Math.round(s.total) }))
-    .sort((a, b) => b.total - a.total)
+    // PRIMARY ordering by shift count; ties broken by hours
+    .sort((a, b) => b.shifts - a.shifts || b.total - a.total)
 }
 
 // Home days per soldier: approved final-leave dates + fixed home ranges (mirrors validation.ts)
@@ -198,7 +201,7 @@ function makeBinaryQuestion(q: string, emoji: string, aName: string, bName: stri
   return { q, emoji, options, correct: options.indexOf(correctName) }
 }
 
-function makeNumberQuestion(q: string, emoji: string, answer: number): Question {
+function makeNumberQuestion(q: string, emoji: string, answer: number, unit = 'שעות'): Question {
   const variants = new Set<number>([answer])
   const offsets = [0.7, 0.85, 1.18, 1.35, 1.6]
   for (const o of shuffle(offsets)) {
@@ -210,8 +213,8 @@ function makeNumberQuestion(q: string, emoji: string, answer: number): Question 
   while (variants.size < 4) { variants.add(answer + bump); bump += 5 }
   const opts = shuffle(Array.from(variants)).slice(0, 4)
   if (!opts.includes(answer)) opts[0] = answer
-  const options = shuffle(opts).map(n => `${n} שעות`)
-  return { q, emoji, options, correct: options.indexOf(`${answer} שעות`) }
+  const options = shuffle(opts).map(n => `${n} ${unit}`)
+  return { q, emoji, options, correct: options.indexOf(`${answer} ${unit}`) }
 }
 
 interface QuizExtras {
@@ -233,18 +236,18 @@ function buildQuiz(stats: SoldierStat[], extras: QuizExtras): Question[] {
   const partnerQs: Question[] = []
   const classicQs: Question[] = []
 
-  // ── Task-type questions (superlative + binary "A or B") ──
-  const typeTotals: Record<string, number> = {}
-  for (const s of stats) for (const [t, h] of Object.entries(s.byType)) typeTotals[t] = (typeTotals[t] ?? 0) + h
-  const topTypes = Object.entries(typeTotals).sort((a, b) => b[1] - a[1]).map(([t]) => t)
+  // ── Task-type questions by SHIFT COUNT (superlative + binary "A or B") ──
+  const typeShiftTotals: Record<string, number> = {}
+  for (const s of stats) for (const [t, n] of Object.entries(s.shiftsByType)) typeShiftTotals[t] = (typeShiftTotals[t] ?? 0) + n
+  const topTypes = Object.entries(typeShiftTotals).sort((a, b) => b[1] - a[1]).map(([t]) => t)
   for (const type of topTypes.slice(0, 6)) {
-    const ranked = [...stats].filter(s => (s.byType[type] ?? 0) > 0).sort((a, b) => (b.byType[type] ?? 0) - (a.byType[type] ?? 0))
+    const ranked = [...stats].filter(s => (s.shiftsByType[type] ?? 0) > 0).sort((a, b) => (b.shiftsByType[type] ?? 0) - (a.shiftsByType[type] ?? 0))
     if (ranked.length >= 1) {
-      const sup = makeWhoQuestion(`מי עשה הכי הרבה שעות "${type}"?`, '🎯', ranked[0].name, allNames)
+      const sup = makeWhoQuestion(`מי עשה הכי הרבה משמרות "${type}"?`, '🎯', ranked[0].name, allNames)
       if (sup) typeQs.push(sup)
     }
-    if (ranked.length >= 2 && (ranked[0].byType[type] ?? 0) !== (ranked[1].byType[type] ?? 0)) {
-      typeQs.push(makeBinaryQuestion(`מי עשה יותר "${type}"?`, '⚔️', ranked[0].name, ranked[1].name, ranked[0].name))
+    if (ranked.length >= 2 && (ranked[0].shiftsByType[type] ?? 0) !== (ranked[1].shiftsByType[type] ?? 0)) {
+      typeQs.push(makeBinaryQuestion(`מי עשה יותר משמרות "${type}"?`, '⚔️', ranked[0].name, ranked[1].name, ranked[0].name))
     }
   }
 
@@ -277,18 +280,18 @@ function buildQuiz(stats: SoldierStat[], extras: QuizExtras): Question[] {
     if (q) partnerQs.push(q)
   }
 
-  // ── Classic questions ──
-  const c1 = makeWhoQuestion('מי צבר הכי הרבה שעות משימה בקו? 👑', '👑', stats[0].name, allNames)
+  // ── Classic questions — emphasizing SHIFT COUNT ──
+  // stats is already sorted by shifts desc, so stats[0] is the busiest soldier.
+  const c1 = makeWhoQuestion('מי עשה הכי הרבה משמרות בקו? 👑', '👑', stats[0].name, allNames)
   if (c1) classicQs.push(c1)
-  const totalTeam = stats.reduce((s, x) => s + x.total, 0)
-  classicQs.push(makeNumberQuestion('כמה שעות משימה צבר הצוות כולו בקו?', '⏱️', Math.round(totalTeam / 5) * 5))
-  classicQs.push(makeNumberQuestion(`כמה שעות בסך הכל צבר ${stats[0].name}?`, '🔥', stats[0].total))
-  const mostShifts = [...stats].sort((a, b) => b.shifts - a.shifts)[0]
-  const cShifts = makeWhoQuestion('מי שובץ למספר המשמרות הגדול ביותר?', '📋', mostShifts.name, allNames)
-  if (cShifts) classicQs.push(cShifts)
+  const totalShifts = stats.reduce((s, x) => s + x.shifts, 0)
+  classicQs.push(makeNumberQuestion('כמה משמרות עשה הצוות כולו בקו?', '📋', Math.round(totalShifts / 5) * 5, 'משמרות'))
+  classicQs.push(makeNumberQuestion(`כמה משמרות עשה ${stats[0].name}?`, '🔥', stats[0].shifts, 'משמרות'))
+  // one hours question kept for flavor
+  classicQs.push(makeNumberQuestion('כמה שעות משימה צבר הצוות כולו בקו?', '⏱️', Math.round(stats.reduce((s, x) => s + x.total, 0) / 5) * 5, 'שעות'))
   const lowest = [...stats].filter(s => !isSplitSoldier(s.name)).pop()
   if (lowest) {
-    const cLow = makeWhoQuestion('מי צבר הכי מעט שעות (מבין המלאים)? 😴', '😴', lowest.name, allNames)
+    const cLow = makeWhoQuestion('מי עשה הכי מעט משמרות (מבין המלאים)? 😴', '😴', lowest.name, allNames)
     if (cLow) classicQs.push(cLow)
   }
 
@@ -327,7 +330,7 @@ function Podium({ top, started }: { top: SoldierStat[]; started: boolean }) {
 }
 
 function PodiumCol({ stat, rank, started }: { stat: SoldierStat; rank: number; started: boolean }) {
-  const hours = useCountUp(stat.total, started, 1500)
+  const shifts = useCountUp(stat.shifts, started, 1500)
   return (
     <div className="flex flex-col items-center" style={{ transitionDelay: `${rank * 150}ms` }}>
       <div className={`text-4xl sm:text-5xl mb-1 transition-all duration-700 ${started ? 'scale-100 opacity-100' : 'scale-0 opacity-0'}`}
@@ -337,7 +340,8 @@ function PodiumCol({ stat, rank, started }: { stat: SoldierStat; rank: number; s
       <div className="text-white font-bold text-sm sm:text-lg text-center mb-1 max-w-[110px] truncate">
         {stat.isCommander && <span className="text-yellow-300">★ </span>}{stat.name}
       </div>
-      <div className="text-yellow-300 font-extrabold text-lg sm:text-2xl mb-2 tabular-nums">{Math.round(hours)}<span className="text-xs">ש׳</span></div>
+      <div className="text-yellow-300 font-extrabold text-lg sm:text-2xl tabular-nums leading-none">{Math.round(shifts)}<span className="text-xs"> משמרות</span></div>
+      <div className="text-white/50 text-[11px] mb-2 tabular-nums">{stat.total} שעות</div>
       <div
         className={`w-20 sm:w-28 rounded-t-2xl bg-gradient-to-t ${PODIUM_COLORS[rank]} shadow-2xl flex items-start justify-center pt-2 transition-all duration-1000 ease-out ${PODIUM_HEIGHTS[rank]}`}
         style={{ transform: started ? 'scaleY(1)' : 'scaleY(0)', transformOrigin: 'bottom', transitionDelay: `${rank * 150}ms` }}
@@ -349,8 +353,8 @@ function PodiumCol({ stat, rank, started }: { stat: SoldierStat; rank: number; s
 }
 
 function BarRow({ stat, rank, max, started }: { stat: SoldierStat; rank: number; max: number; started: boolean }) {
-  const hours = useCountUp(stat.total, started, 1200)
-  const pct = max > 0 ? (stat.total / max) * 100 : 0
+  const shifts = useCountUp(stat.shifts, started, 1200)
+  const pct = max > 0 ? (stat.shifts / max) * 100 : 0
   return (
     <div className="flex items-center gap-3" dir="rtl">
       <span className="text-slate-400 font-bold w-6 text-center tabular-nums">{rank + 1}</span>
@@ -363,7 +367,7 @@ function BarRow({ stat, rank, max, started }: { stat: SoldierStat; rank: number;
           style={{ width: started ? `${Math.max(pct, 8)}%` : '0%', transitionDelay: `${rank * 90}ms` }}
         />
       </div>
-      <span className="text-purple-200 font-bold text-sm w-14 text-left tabular-nums">{Math.round(hours)}ש׳</span>
+      <span className="text-purple-200 font-bold text-sm w-20 text-left tabular-nums">{Math.round(shifts)} משמ׳</span>
     </div>
   )
 }
@@ -466,7 +470,7 @@ export default function LeaderboardShow() {
               טבלת הצדק
             </h1>
             <p className="text-lg sm:text-2xl text-purple-200 mb-2">סיכום הקו — מי הרים את הצוות?</p>
-            <p className="text-sm text-white/50 mb-10">{stats.length} לוחמים · {stats.reduce((s, x) => s + x.total, 0).toLocaleString()} שעות משימה</p>
+            <p className="text-sm text-white/50 mb-10">{stats.length} לוחמים · {stats.reduce((s, x) => s + x.shifts, 0).toLocaleString()} משמרות · {stats.reduce((s, x) => s + x.total, 0).toLocaleString()} שעות</p>
             <button onClick={goBoard}
               className="text-xl font-bold bg-gradient-to-l from-amber-400 to-yellow-500 text-amber-950 rounded-2xl px-10 py-4 shadow-2xl hover:scale-105 active:scale-95 transition pulse-glow">
               ▶ התחל את ההצגה
@@ -477,16 +481,17 @@ export default function LeaderboardShow() {
         {/* ── LEADERBOARD ── */}
         {ready && stage === 'board' && (
           <div className="animate-fadeup">
-            <h2 className="text-3xl sm:text-4xl font-black text-center mb-8 bg-clip-text text-transparent bg-gradient-to-l from-yellow-200 to-amber-400">
+            <h2 className="text-3xl sm:text-4xl font-black text-center mb-2 bg-clip-text text-transparent bg-gradient-to-l from-yellow-200 to-amber-400">
               🏆 לוח התורמים הגדולים
             </h2>
+            <p className="text-center text-sm text-purple-200/70 mb-8">לפי מספר משמרות</p>
 
             <Podium top={stats.slice(0, 3)} started={boardStarted} />
 
             {stats.length > 3 && (
               <div className="bg-white/5 backdrop-blur rounded-2xl p-5 space-y-3 border border-white/10">
                 {stats.slice(3, 12).map((s, i) => (
-                  <BarRow key={s.id} stat={s} rank={i + 3} max={stats[0].total} started={boardStarted} />
+                  <BarRow key={s.id} stat={s} rank={i + 3} max={stats[0].shifts} started={boardStarted} />
                 ))}
               </div>
             )}
