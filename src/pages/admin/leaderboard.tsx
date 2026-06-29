@@ -97,6 +97,32 @@ function buildPartners(assignments: Assignment[]): Record<string, Array<{ id: st
   return out
 }
 
+// Longest continuous on-duty stretch (hours): merge each soldier's touching/overlapping
+// shifts into blocks and take the longest block.
+function buildLongestStreak(tasks: Task[], assignments: Assignment[]): Record<string, number> {
+  const taskById = new Map(tasks.map(t => [t.id, t]))
+  const bySoldier: Record<string, Array<{ s: number; e: number }>> = {}
+  for (const a of assignments) {
+    const t = taskById.get(a.task_id)
+    if (!t) continue
+    const s = t.start_datetime.getTime(), e = t.end_datetime.getTime()
+    if (e <= s) continue
+    ;(bySoldier[a.soldier_id] ??= []).push({ s, e })
+  }
+  const out: Record<string, number> = {}
+  for (const [id, ivs] of Object.entries(bySoldier)) {
+    ivs.sort((a, b) => a.s - b.s)
+    let bestMs = 0, curS = ivs[0].s, curE = ivs[0].e
+    for (let i = 1; i < ivs.length; i++) {
+      if (ivs[i].s <= curE) { curE = Math.max(curE, ivs[i].e) }   // touching / overlapping → same block
+      else { bestMs = Math.max(bestMs, curE - curS); curS = ivs[i].s; curE = ivs[i].e }
+    }
+    bestMs = Math.max(bestMs, curE - curS)
+    out[id] = Math.round(bestMs / 3_600_000)
+  }
+  return out
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Confetti — self-contained canvas burst, no dependencies
 // ─────────────────────────────────────────────────────────────────────────────
@@ -201,6 +227,34 @@ function makeBinaryQuestion(q: string, emoji: string, aName: string, bName: stri
   return { q, emoji, options, correct: options.indexOf(correctName) }
 }
 
+// "מי מהבאים עשה יותר X" — pick 4 soldiers with a unique top scorer as the answer.
+function makeComparisonQuestion(q: string, emoji: string, scored: Array<{ name: string; val: number }>): Question | null {
+  const pool = scored.filter(x => x.val > 0)
+  if (pool.length < 4) return null
+  const top = [...pool].sort((a, b) => b.val - a.val)[0]
+  const lessers = shuffle(pool.filter(x => x.val < top.val))
+  if (lessers.length < 3) return null
+  const opts = shuffle([top, ...lessers.slice(0, 3)])
+  return { q, emoji, options: opts.map(o => o.name), correct: opts.findIndex(o => o === top) }
+}
+
+// Fixed-answer question with hand-picked options (for the insider/"spicy" questions).
+function makeFixedQuestion(q: string, emoji: string, correct: string, distractors: string[]): Question {
+  const options = shuffle([correct, ...distractors])
+  return { q, emoji, options, correct: options.indexOf(correct) }
+}
+
+// Insider jokes — one of these is included in EVERY quiz. Answers are intentional, not data-driven.
+const SPICY_QUESTIONS: Array<{ q: string; emoji: string; correct: string; distractors: string[] }> = [
+  { q: 'מי היה אמור להיות השבצקיסט בקו הזה? 🤫', emoji: '🤫', correct: 'חגי', distractors: ['עדן', 'אוראל אפנזר', 'צארום'] },
+  { q: 'למי היה ממשק סודי לראות את השבצ"ק שבוע קדימה? 🕵️', emoji: '🕵️', correct: 'צארום', distractors: ['אוראל אפנזר', 'בוצר', 'חגי'] },
+  { q: 'מי מחק שבוע שלם של שבצ"ק בטעות? 😱', emoji: '😱', correct: 'אוראל אפנזר', distractors: ['מיתר', 'צארום', 'חגי'] },
+  { q: 'את מי ניסינו להעלות של"ז כל הזמן? 😅', emoji: '😅', correct: 'מאור', distractors: ['צארום', 'חגי', 'מיתר'] },
+]
+
+// Task types that are not "real" missions — excluded from all task-type questions.
+const EXCLUDED_TYPES = new Set(['תרג"ד'])
+
 function makeNumberQuestion(q: string, emoji: string, answer: number, unit = 'שעות'): Question {
   const variants = new Set<number>([answer])
   const offsets = [0.7, 0.85, 1.18, 1.35, 1.6]
@@ -221,6 +275,7 @@ interface QuizExtras {
   homeDays: Record<string, number>
   partners: Record<string, Array<{ id: string; count: number }>>
   nameById: Record<string, string>
+  streak: Record<string, number>   // longest continuous on-duty stretch (hours) per soldier
 }
 
 const QUIZ_LENGTH = 8
@@ -228,42 +283,57 @@ const QUIZ_LENGTH = 8
 function buildQuiz(stats: SoldierStat[], extras: QuizExtras): Question[] {
   const allNames = stats.map(s => s.name)
   if (stats.length < 4) return []
-  const { homeDays, partners, nameById } = extras
+  const { homeDays, partners, nameById, streak } = extras
 
   // Buckets keep categories separated so we can guarantee variety in the final mix.
   const typeQs: Question[] = []
+  const comparisonQs: Question[] = []   // "מי מהבאים עשה יותר X"
   const homeQs: Question[] = []
   const partnerQs: Question[] = []
+  const streakQs: Question[] = []
   const classicQs: Question[] = []
 
-  // ── Task-type questions by SHIFT COUNT (superlative + binary "A or B") ──
+  // ── Task-type questions by SHIFT COUNT (superlative + binary), excluding non-missions ──
   const typeShiftTotals: Record<string, number> = {}
-  for (const s of stats) for (const [t, n] of Object.entries(s.shiftsByType)) typeShiftTotals[t] = (typeShiftTotals[t] ?? 0) + n
+  for (const s of stats) for (const [t, n] of Object.entries(s.shiftsByType)) {
+    if (EXCLUDED_TYPES.has(t)) continue
+    typeShiftTotals[t] = (typeShiftTotals[t] ?? 0) + n
+  }
   const topTypes = Object.entries(typeShiftTotals).sort((a, b) => b[1] - a[1]).map(([t]) => t)
-  for (const type of topTypes.slice(0, 6)) {
+  for (const type of topTypes.slice(0, 8)) {
     const ranked = [...stats].filter(s => (s.shiftsByType[type] ?? 0) > 0).sort((a, b) => (b.shiftsByType[type] ?? 0) - (a.shiftsByType[type] ?? 0))
     if (ranked.length >= 1) {
       const sup = makeWhoQuestion(`מי עשה הכי הרבה משמרות "${type}"?`, '🎯', ranked[0].name, allNames)
       if (sup) typeQs.push(sup)
     }
-    if (ranked.length >= 2 && (ranked[0].shiftsByType[type] ?? 0) !== (ranked[1].shiftsByType[type] ?? 0)) {
-      typeQs.push(makeBinaryQuestion(`מי עשה יותר משמרות "${type}"?`, '⚔️', ranked[0].name, ranked[1].name, ranked[0].name))
-    }
+    // "מי מהבאים עשה יותר X" — 4 plausible candidates
+    const cmp = makeComparisonQuestion(`מי מהבאים עשה יותר "${type}"?`, '⚖️',
+      stats.map(s => ({ name: s.name, val: s.shiftsByType[type] ?? 0 })))
+    if (cmp) comparisonQs.push(cmp)
   }
 
   // ── Home days (excluding split-position soldiers — they were ~50% by design) ──
   const homeRanked = stats
     .filter(s => !isSplitSoldier(s.name) && (homeDays[s.id] ?? 0) > 0)
     .sort((a, b) => (homeDays[b.id] ?? 0) - (homeDays[a.id] ?? 0))
-  const nonSplitNames = stats.filter(s => !isSplitSoldier(s.name)).map(s => s.name)
+  const nonSplit = stats.filter(s => !isSplitSoldier(s.name))
+  const nonSplitNames = nonSplit.map(s => s.name)
   if (homeRanked.length >= 4) {
     const sup = makeWhoQuestion('מי היה הכי הרבה ימים בבית? 🏠', '🏠', homeRanked[0].name, nonSplitNames)
     if (sup) homeQs.push(sup)
-    // binary between two clearly-different soldiers
-    const a = homeRanked[0], b = homeRanked[Math.min(3, homeRanked.length - 1)]
-    if ((homeDays[a.id] ?? 0) !== (homeDays[b.id] ?? 0)) {
-      homeQs.push(makeBinaryQuestion('מי היה יותר ימים בבית?', '🏠', a.name, b.name, a.name))
-    }
+    const cmp = makeComparisonQuestion('מי מהבאים היה יותר ימים בבית? 🏠', '🏠',
+      nonSplit.map(s => ({ name: s.name, val: homeDays[s.id] ?? 0 })))
+    if (cmp) comparisonQs.push(cmp)
+  }
+
+  // ── Longest continuous on-duty stretch ──
+  const streakRanked = stats.filter(s => (streak[s.id] ?? 0) > 0).sort((a, b) => (streak[b.id] ?? 0) - (streak[a.id] ?? 0))
+  if (streakRanked.length >= 4) {
+    const sup = makeWhoQuestion('מי שובץ למשימות הכי הרבה זמן ברצף? ⏳', '⏳', streakRanked[0].name, allNames)
+    if (sup) streakQs.push(sup)
+    const cmp = makeComparisonQuestion('מי מהבאים היה הכי הרבה זמן ברצף במשימות? ⏳', '⏳',
+      stats.map(s => ({ name: s.name, val: streak[s.id] ?? 0 })))
+    if (cmp) comparisonQs.push(cmp)
   }
 
   // ── "מי היה הכי הרבה עם מי" — co-occurrence partners ──
@@ -280,6 +350,9 @@ function buildQuiz(stats: SoldierStat[], extras: QuizExtras): Question[] {
     if (q) partnerQs.push(q)
   }
 
+  // ── Spicy insider questions — one is always included ──
+  const spicyQs = SPICY_QUESTIONS.map(s => makeFixedQuestion(s.q, s.emoji, s.correct, s.distractors))
+
   // ── Classic questions — emphasizing SHIFT COUNT ──
   // stats is already sorted by shifts desc, so stats[0] is the busiest soldier.
   const c1 = makeWhoQuestion('מי עשה הכי הרבה משמרות בקו? 👑', '👑', stats[0].name, allNames)
@@ -287,24 +360,29 @@ function buildQuiz(stats: SoldierStat[], extras: QuizExtras): Question[] {
   const totalShifts = stats.reduce((s, x) => s + x.shifts, 0)
   classicQs.push(makeNumberQuestion('כמה משמרות עשה הצוות כולו בקו?', '📋', Math.round(totalShifts / 5) * 5, 'משמרות'))
   classicQs.push(makeNumberQuestion(`כמה משמרות עשה ${stats[0].name}?`, '🔥', stats[0].shifts, 'משמרות'))
-  // one hours question kept for flavor
-  classicQs.push(makeNumberQuestion('כמה שעות משימה צבר הצוות כולו בקו?', '⏱️', Math.round(stats.reduce((s, x) => s + x.total, 0) / 5) * 5, 'שעות'))
-  const lowest = [...stats].filter(s => !isSplitSoldier(s.name)).pop()
+  const lowest = [...nonSplit].pop()
   if (lowest) {
     const cLow = makeWhoQuestion('מי עשה הכי מעט משמרות (מבין המלאים)? 😴', '😴', lowest.name, allNames)
     if (cLow) classicQs.push(cLow)
   }
 
-  // ── Assemble: guarantee the categories the user asked for, then fill ──
+  // ── Assemble: always 1 spicy + guaranteed category coverage, then fill ──
   const final: Question[] = []
-  const take = (arr: Question[], n: number) => final.push(...shuffle(arr).slice(0, n))
-  take(typeQs, 3)      // task types — emphasized
-  take(homeQs, 1)      // home days
-  take(partnerQs, 2)   // who-with-whom
-  take(classicQs, 2)
-  // top up from whatever remains if any bucket was short
-  const leftovers = shuffle([...typeQs, ...homeQs, ...partnerQs, ...classicQs]).filter(q => !final.includes(q))
-  while (final.length < QUIZ_LENGTH && leftovers.length) final.push(leftovers.shift() as Question)
+  const used = new Set<Question>()
+  const take = (arr: Question[], n: number) => {
+    for (const q of shuffle(arr)) {
+      if (final.length >= QUIZ_LENGTH || n <= 0) break
+      if (!used.has(q)) { final.push(q); used.add(q); n-- }
+    }
+  }
+  take(spicyQs, 1)        // always exactly one insider question
+  take(typeQs, 2)         // superlatives by type (סיור / של"ז / בלת"מ / מטבח …)
+  take(comparisonQs, 2)   // "מי מהבאים"
+  take(streakQs, 1)       // longest continuous stretch
+  take(homeQs, 1)         // home days
+  take(partnerQs, 1)      // who-with-whom
+  // fill any remaining slots from the whole pool
+  take([...typeQs, ...comparisonQs, ...streakQs, ...homeQs, ...partnerQs, ...classicQs], QUIZ_LENGTH)
 
   return shuffle(final).slice(0, QUIZ_LENGTH)
 }
@@ -391,7 +469,8 @@ export default function LeaderboardShow() {
     homeDays: buildHomeDays(soldiers, finalLeave),
     partners: buildPartners(allAssignments),
     nameById: Object.fromEntries(soldiers.map(s => [s.id, s.full_name])),
-  }), [soldiers, finalLeave, allAssignments])
+    streak: buildLongestStreak(allTasks, allAssignments),
+  }), [soldiers, finalLeave, allTasks, allAssignments])
 
   const [stage, setStage] = useState<Stage>('intro')
   const [boardStarted, setBoardStarted] = useState(false)
