@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
+import Link from 'next/link'
 import Layout from '@/components/layout/Layout'
 import ScheduleGrid from '@/components/schedule/ScheduleGrid'
 import InquiryModal from '@/components/InquiryModal'
@@ -399,6 +400,18 @@ export default function HomePage() {
 
   return (
     <Layout title={'שבצ"ק צוות אוראל'} navActions={navActions}>
+      {/* End-of-tour celebration banner — links to the public leaderboard + quiz */}
+      <Link href="/celebration"
+        className="block mb-4 rounded-2xl p-[2px] bg-gradient-to-l from-fuchsia-500 via-purple-500 to-amber-400 shadow-lg hover:scale-[1.01] active:scale-[0.99] transition">
+        <div className="rounded-2xl bg-gradient-to-l from-purple-900 to-fuchsia-900 px-5 py-4 text-center text-white">
+          <div className="text-lg font-black mb-0.5">🎉 חגיגת סוף סבב 🎉</div>
+          <div className="text-xs text-amber-200 font-semibold mb-3">לוח התורמים הגדולים + חידון השבצ&quot;ק</div>
+          <span className="inline-block bg-gradient-to-l from-amber-400 to-yellow-500 text-amber-950 font-bold rounded-xl px-5 py-2.5 text-sm shadow-md">
+            🤔 חושב שאתה שולט בשבצ&quot;ק כמו צארום? בואו נראה ▶
+          </span>
+        </div>
+      </Link>
+
       {/* Soldier selector */}
       <div className="relative mb-4">
         <div className="flex gap-2">

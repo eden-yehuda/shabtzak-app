@@ -44,7 +44,7 @@ git checkout master
 
 | סביבה   | ענף       | URL                                          |
 |---------|-----------|----------------------------------------------|
-| Prod    | `main`    | https://shivzuk.netlify.app                  |
+| Prod    | `main`    | https://shavzak1.netlify.app                 |
 | Staging | `staging` | https://staging--shivzuk.netlify.app *(נדרש להפעיל branch deploys בנטליפיי)* |
 
 ### דמו לציבור
