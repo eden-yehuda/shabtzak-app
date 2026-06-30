@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import Link from 'next/link'
+import CelebrationShow from '@/components/CelebrationShow'
 import Layout from '@/components/layout/Layout'
 import ScheduleGrid from '@/components/schedule/ScheduleGrid'
 import InquiryModal from '@/components/InquiryModal'
@@ -219,7 +220,18 @@ function formatUpdatedAt(d: Date): string {
   return `${day} ${date} ${time}`
 }
 
+// ── End-of-tour switch ──────────────────────────────────────────────────────
+// While true, the soldier home page (/) shows the "חגיגת סוף סבב" celebration.
+// The full soldier schedule interface below (SoldierSchedule) is kept intact and
+// HIDDEN — flip this to false to restore it for the next סבב.
+const CELEBRATION_MODE = true
+
 export default function HomePage() {
+  if (CELEBRATION_MODE) return <CelebrationShow />
+  return <SoldierSchedule />
+}
+
+function SoldierSchedule() {
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [schedulesLoading, setSchedulesLoading] = useState(true)
   const [scheduleIdx, setScheduleIdx] = useState(0)
