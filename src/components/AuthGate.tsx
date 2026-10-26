@@ -32,7 +32,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   // The admin section manages its own auth (login page + AdminLayout) — don't gate it.
-  if (router.pathname.startsWith('/admin')) return <>{children}</>
+  // The demo sandbox is fully self-contained (localStorage, no Firestore) — open to all, no login.
+  if (router.pathname.startsWith('/admin') || router.pathname.startsWith('/demo-sandbox')) return <>{children}</>
 
   if (checking) return <div className="min-h-screen bg-navy" />
 
