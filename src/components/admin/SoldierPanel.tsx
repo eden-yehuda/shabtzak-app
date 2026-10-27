@@ -12,6 +12,8 @@ interface Props {
   selectedTaskId: string | null
   homeLeaveHour?: number  // hour when soldiers swap (default 2 — same as DAY_START)
   onAssigned?: (taskId: string, soldierId: string) => Promise<void>
+  // When provided, used INSTEAD of the Firestore createAssignment (e.g. the local demo sandbox).
+  onAssign?: (taskId: string, soldierId: string) => Promise<void>
 }
 
 function isoDate(d: Date) {
@@ -80,7 +82,7 @@ function canAssignByLeaveStatus(status: HomeStatus, task: Task | null, homeLeave
   return false
 }
 
-export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave, selectedTaskId, homeLeaveHour = 2, onAssigned }: Props) {
+export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave, selectedTaskId, homeLeaveHour = 2, onAssigned, onAssign }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [soldierModalId, setSoldierModalId] = useState<string | null>(null)
   const [othersOpen, setOthersOpen] = useState(false)
@@ -211,8 +213,12 @@ export default function SoldierPanel({ soldiers, assignments, tasks, finalLeave,
 
     setIsSubmitting(true)
     try {
-      await createAssignment(selectedTaskId, soldierId)
-      await onAssigned?.(selectedTaskId, soldierId)
+      if (onAssign) {
+        await onAssign(selectedTaskId, soldierId)
+      } else {
+        await createAssignment(selectedTaskId, soldierId)
+        await onAssigned?.(selectedTaskId, soldierId)
+      }
     } catch (err) { console.error(err) }
     finally { setIsSubmitting(false) }
   }
