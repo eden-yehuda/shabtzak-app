@@ -37,3 +37,6 @@ next-env.d.ts
 
 # internal tooling
 .superpowers
+
+# demo project local config (not committed)
+scripts/demo-firebase-config.json
